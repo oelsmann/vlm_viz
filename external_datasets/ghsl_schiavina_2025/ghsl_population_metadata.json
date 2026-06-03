@@ -1,0 +1,38 @@
+{
+  "source_url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_WUP_POP_GLOBE_R2025A/GHS_WUP_POP_E2025_GLOBE_R2025A_54009_1000/V1-0/GHS_WUP_POP_E2025_GLOBE_R2025A_54009_1000_V1_0.zip",
+  "dataset_title": "GHS-WUP population spatial raster dataset R2025A",
+  "component": "population",
+  "description": "Projected 2025 population counts sampled from the GHSL GHS-WUP-POP R2025A 1 km Mollweide raster.",
+  "units": "people per source grid cell",
+  "sampling_strategy": "1x1 maximum subsampling per rendered lon/lat cell",
+  "source_projection": "World Mollweide / WGS 84",
+  "source_width": 18041,
+  "source_height": 9000,
+  "source_file": "external_datasets/ghsl_schiavina_2025/GHS_WUP_POP_E2025_GLOBE_R2025A_54009_1000_V1_0/GHS_WUP_POP_E2025_GLOBE_R2025A_54009_1000_V1_0.tif.ovr",
+  "source_bounds_projected_m": [
+    -18041000.0,
+    -9000000.0,
+    18041000.0,
+    9000000.0
+  ],
+  "width": 9216,
+  "height": 4608,
+  "bounds": [
+    -180,
+    -90,
+    180,
+    90
+  ],
+  "render_record_format": [
+    "longitude",
+    "latitude",
+    "population",
+    "radius_m"
+  ],
+  "valid_pixel_count": 2810325,
+  "min_population": 0,
+  "max_population": 154958,
+  "p95_population": 684,
+  "p99_population": 2950,
+  "max_log10_population": 3.47
+}

@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About | Global Vertical Land Motion</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --nav-height: 58px;
+      --bg: #0f1720;
+      --panel: #121c28;
+      --soft: #dbe7f3;
+      --muted: #97a9bc;
+      --line: #2b3a4d;
+      --accent: #63b3ff;
+      --accent-2: #7ae4c3;
+      --warn: #ffd06b;
+      --danger: #ff7369;
+      --white: #f7fbff;
+      --shadow: 0 20px 50px rgba(0,0,0,.28);
+      --radius: 18px;
+      --max: 1200px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      min-height: 100%;
+      background:
+        radial-gradient(1200px 700px at 80% -10%, rgba(99,179,255,.14), transparent 55%),
+        radial-gradient(900px 500px at 10% 0%, rgba(122,228,195,.1), transparent 45%),
+        linear-gradient(180deg, #0e1620 0%, #101823 100%);
+      color: var(--soft);
+      font-family: "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.5;
+    }
+    a { color: #9fd0ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app-navbar {
+      height: var(--nav-height);
+      background: rgba(255, 255, 255, 0.97);
+      border-bottom: 1px solid #d8dee8;
+      box-shadow: 0 1px 12px rgba(20, 32, 46, 0.08);
+      z-index: 1100;
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: #1c2b39;
+    }
+    .brand-title a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .app-navbar .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: #2b3a4d;
+      font-weight: 700;
+      font-size: 14px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .app-navbar .nav-link:hover,
+    .app-navbar .nav-link.active {
+      color: #0d6efd;
+      text-decoration: none;
+    }
+    .showcase-disclaimer {
+      position: fixed;
+      top: calc(var(--nav-height) + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1080;
+      width: min(940px, calc(100vw - 32px));
+      padding: 8px 12px;
+      border: 1px solid #d8c88e;
+      border-radius: 8px;
+      background: rgba(255, 248, 218, 0.98);
+      color: #5a4a16;
+      box-shadow: 0 8px 22px rgba(20, 32, 46, 0.14);
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.35;
+      text-align: center;
+    }
+    main {
+      padding-top: calc(var(--nav-height) + 54px);
+    }
+    .container-page {
+      width: min(var(--max), calc(100vw - 32px));
+      margin: 0 auto;
+    }
+    .section { padding: 34px 0; }
+    .hero {
+      padding: 36px 0 18px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .brand-panel {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .favicon-card {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: #eaf3fb;
+      display: grid;
+      place-items: center;
+      box-shadow: inset 0 0 0 1px rgba(15,23,32,.08);
+      flex: 0 0 auto;
+    }
+    h1 {
+      margin: 0 0 12px;
+      max-width: 980px;
+      color: var(--white);
+      font-size: clamp(2rem, 3.8vw, 3.8rem);
+      line-height: 1.04;
+      letter-spacing: -.03em;
+    }
+    h2, h3, h4 { color: var(--white); }
+    h3 { margin: 0 0 12px; font-size: 1.28rem; }
+    p { margin: 0 0 12px; }
+    .sub {
+      max-width: 900px;
+      color: var(--muted);
+      font-size: clamp(1.02rem, 1.6vw, 1.15rem);
+      margin-bottom: 16px;
+    }
+    .muted { color: var(--muted); }
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 18px 0 22px;
+    }
+    .pill-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      border-radius: 999px;
+      padding: 11px 16px;
+      font-weight: 800;
+      border: 1px solid rgba(255,255,255,.09);
+      background: rgba(255,255,255,.03);
+      color: var(--white);
+      transition: .2s ease;
+    }
+    .pill-button:hover {
+      text-decoration: none;
+      transform: translateY(-1px);
+      background: rgba(255,255,255,.06);
+    }
+    .pill-button.primary {
+      background: linear-gradient(135deg, rgba(99,179,255,.22), rgba(122,228,195,.16));
+      border-color: rgba(99,179,255,.25);
+    }
+    .card-panel {
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.025));
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .panel { padding: 24px; }
+    .architecture {
+      display: grid;
+      grid-template-columns: 1fr 86px 1.06fr 86px 1fr;
+      gap: 14px;
+      align-items: start;
+      margin-top: 14px;
+    }
+    .node {
+      padding: 18px;
+      min-height: 194px;
+      transition: .2s ease;
+      cursor: default;
+    }
+    .node:hover {
+      transform: translateY(-3px);
+      border-color: rgba(99,179,255,.24);
+      background: linear-gradient(180deg, rgba(99,179,255,.08), rgba(255,255,255,.03));
+    }
+    .tag {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: #99d0ff;
+      font-size: .72rem;
+      font-weight: 900;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .node-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .node-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+      flex: 0 0 auto;
+    }
+    .node-icon svg,
+    .node-icon img {
+      width: 22px;
+      height: 22px;
+      display: block;
+      object-fit: contain;
+    }
+    .node h4 { margin: 0; font-size: 1.1rem; }
+    .node p { margin: 0; color: #d4e0ec; font-size: .97rem; }
+    .arrow {
+      display: grid;
+      place-items: center;
+      min-height: 194px;
+      color: #8fb6d8;
+      font-weight: 800;
+      position: relative;
+    }
+    .arrow .shaft {
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(99,179,255,.12), rgba(99,179,255,.7), rgba(99,179,255,.12));
+      border-radius: 999px;
+      position: relative;
+    }
+    .arrow .shaft::after {
+      content: "";
+      position: absolute;
+      right: -1px;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      border-top: 2px solid #9fd0ff;
+      border-right: 2px solid #9fd0ff;
+      transform: translateY(-50%) rotate(45deg);
+    }
+    .arrow-label {
+      position: absolute;
+      top: calc(50% - 28px);
+      background: rgba(15,23,32,.9);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 6px 9px;
+      border-radius: 999px;
+      font-size: .82rem;
+      color: #d7e7f7;
+    }
+    .explainer {
+      margin-top: 18px;
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.035);
+      border: 1px dashed rgba(255,255,255,.14);
+      min-height: 98px;
+    }
+    .explainer h4 { margin: 0 0 8px; }
+    .explainer p { margin: 0; color: #d0deea; }
+    .flow-legend,
+    .inline-links,
+    .logos {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .flow-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(255,255,255,.08);
+      padding: 8px 10px;
+      border-radius: 999px;
+      color: #dce7f2;
+      font-size: .92rem;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.blue { background: #63b3ff; }
+    .dot.green { background: #7ae4c3; }
+    .dot.gold { background: #ffd06b; }
+    .dot.red { background: #ff7369; }
+    .important-banner {
+      margin-top: 22px;
+      padding: 22px;
+      border-radius: 22px;
+    }
+    .ipls-banner {
+      background: linear-gradient(135deg, rgba(255,115,105,.12), rgba(255,208,107,.12));
+      border: 1px solid rgba(255,208,107,.22);
+    }
+    .disclaimer-banner {
+      background: linear-gradient(135deg, rgba(99,179,255,.12), rgba(122,228,195,.12));
+      border: 1px solid rgba(99,179,255,.22);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      font-size: .76rem;
+      font-weight: 900;
+    }
+    .ipls-banner .eyebrow { color: #ffd88f; }
+    .disclaimer-banner .eyebrow { color: #9fd0ff; }
+    .important-banner h2 {
+      margin: 0 0 8px;
+      font-size: clamp(1.3rem,2.1vw,1.9rem);
+      line-height: 1.1;
+    }
+    .important-banner p {
+      margin: 0 0 14px;
+      color: #d4dfeb;
+      max-width: 980px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .logo-chip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 250px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 18px;
+      color: inherit;
+    }
+    .logo-chip:hover {
+      text-decoration: none;
+      background: rgba(255,255,255,.055);
+    }
+    .logo-chip img,
+    .logo-chip svg {
+      width: 58px;
+      height: 42px;
+      object-fit: contain;
+      flex: 0 0 auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px;
+    }
+    .logo-chip strong { display: block; color: var(--white); }
+    .logo-chip small { display: block; color: var(--muted); }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 14px;
+    }
+    .feature {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+    .feature h4 { margin: 0 0 6px; font-size: 1.04rem; }
+    .feature p { margin: 0; color: #cedbe7; font-size: .95rem; }
+    .footer {
+      padding: 24px 0 48px;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+    @media (max-width: 980px) {
+      .grid-2,
+      .architecture,
+      .features { grid-template-columns: 1fr; }
+      .arrow { min-height: 64px; }
+      .arrow .shaft { transform: rotate(90deg); width: 64px; }
+      .arrow-label { top: 10px; }
+    }
+    @media (max-width: 640px) {
+      .logo-chip { min-width: unset; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar app-navbar fixed-top px-3">
+    <div class="container-fluid px-0">
+      <div class="brand-title me-auto"><a href="index.html">Global Vertical Land Motion</a></div>
+      <a class="nav-link ms-3" href="index.html"><i class="bi bi-globe-americas"></i><span class="d-none d-sm-inline">Map</span></a>
+      <a class="nav-link ms-3" href="catalogue.html"><i class="bi bi-table"></i><span class="d-none d-sm-inline">Catalogue</span></a>
+      <a class="nav-link ms-3" href="compare.html"><i class="bi bi-columns-gap"></i><span class="d-none d-sm-inline">Compare</span></a>
+      <a class="nav-link ms-3 active" href="about.html"><i class="bi bi-info-circle"></i><span class="d-none d-sm-inline">About</span></a>
+    </div>
+  </nav>
+  <div class="showcase-disclaimer">
+    Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Please cite original data sources, DOIs, and associated papers when using any dataset.
+  </div>
+  <main>
+    <header class="hero">
+      <div class="container-page">
+        <div class="brand-panel">
+          <div class="favicon-card" aria-hidden="true">
+            <img src="favicon.svg" width="28" height="28" alt="">
+          </div>
+          <div>
+            <div style="font-size:1.02rem;color:var(--white);font-weight:800">Global VLM Data Platform</div>
+            <div class="muted" style="font-size:.92rem">Open vertical land motion data for sea-level science</div>
+          </div>
+        </div>
+
+        <h1>A global platform for vertical land motion data in support of relative sea-level science.</h1>
+        <p class="sub">
+          This platform is designed to make heterogeneous VLM observations, models, and hybrid coastal estimates easier to discover, compare, document, and reuse in one open, community-oriented place.
+        </p>
+
+        <div class="hero-actions">
+          <a class="pill-button primary" href="#how-it-works">Explore the platform concept</a>
+          <a class="pill-button" href="https://sites.google.com/view/iplsubsidence/home" target="_blank" rel="noopener">Visit IPLS</a>
+          <a class="pill-button" href="https://forms.gle/" target="_blank" rel="noopener">Join the IPLS mailing list</a>
+        </div>
+
+        <section class="card-panel panel" id="how-it-works">
+          <h3>Interactive concept: how the platform works</h3>
+          <p class="muted">
+            Hover any box or arrow to update the explanation panel. The concept below makes the architecture explicit: community members work directly on two GitHub repositories, while open archives such as Zenodo remain the authoritative external source environment for published datasets and supplements.
+          </p>
+
+          <div class="architecture">
+            <div class="node card-panel hoverable" data-title="Open data archives" data-text="External archives such as Zenodo, project supplements, and institutional repositories host raw or published datasets. The platform should link back to those original records wherever possible, rather than replacing them.">
+              <div class="tag">External source</div>
+              <div class="node-head">
+                <div class="node-icon"><i class="bi bi-database-fill"></i></div>
+                <h4>Zenodo & archives</h4>
+              </div>
+              <p>Original files, supplements, release records, DOI pages, metadata, and citation targets.</p>
+            </div>
+
+            <div class="arrow hoverable" data-title="Document and ingest" data-text="This arrow means the community documents where datasets come from, which variables are used, and how those data are transformed into web-ready formats while preserving provenance.">
+              <div class="arrow-label">Ingest</div>
+              <div class="shaft"></div>
+            </div>
+
+            <div class="node card-panel hoverable" data-title="GitHub repository 1" data-text="This is the shared data-and-code repository. Community contributors work here directly through pull requests, scripts, JSON metadata, manifests, and reproducible preprocessing logic.">
+              <div class="tag">GitHub repo 1</div>
+              <div class="node-head">
+                <div class="node-icon"><i class="bi bi-github"></i></div>
+                <h4>Data & code</h4>
+              </div>
+              <p>Dataset folders, metadata JSON, scripts, notebooks, processing logic, schema, manifests, attribution.</p>
+            </div>
+
+            <div class="arrow hoverable" data-title="Build and publish" data-text="This arrow represents automated checks, validation, data packaging, and publishing static payloads that the website can render without a backend server.">
+              <div class="arrow-label">Build</div>
+              <div class="shaft"></div>
+            </div>
+
+            <div class="node card-panel hoverable" data-title="GitHub repository 2" data-text="This is the public-facing website repository, for example GitHub Pages. It renders the static interface in the browser: maps, filters, about pages, downloads, comparison tools, comments, and documentation.">
+              <div class="tag">GitHub repo 2</div>
+              <div class="node-head">
+                <div class="node-icon"><i class="bi bi-window-sidebar"></i></div>
+                <h4>Pages website</h4>
+              </div>
+              <p>Static web app with maps, filters, comments, concept pages, downloads, and side-by-side comparison.</p>
+            </div>
+          </div>
+
+          <div class="architecture" style="margin-top:14px">
+            <div class="node card-panel hoverable" data-title="Community contribution" data-text="Community members work directly on the repositories. They can add datasets, improve metadata, fix code, document provenance, and propose interface improvements. The repos are not just storage; they are the collaboration space.">
+              <div class="tag">Community</div>
+              <div class="node-head">
+                <div class="node-icon"><i class="bi bi-people-fill" style="color:#7ae4c3"></i></div>
+                <h4>Community contributors</h4>
+              </div>
+              <p>Directly edit repo 1 and repo 2 through issues, pull requests, dataset submissions, and metadata review.</p>
+            </div>
+
+            <div class="arrow hoverable" data-title="Review and merge" data-text="This arrow represents technical and scientific review before updates are merged. That can include metadata checks, source attribution checks, and lightweight quality control.">
+              <div class="arrow-label">Review</div>
+              <div class="shaft"></div>
+            </div>
+
+            <div class="node card-panel hoverable" data-title="Shared standards" data-text="A common schema lets GNSS, InSAR, tide gauges, GIA models, hybrid estimates, and contextual layers be described in one coherent system. That includes original-source links, provenance, units, variables, and uncertainty notes.">
+              <div class="tag">Standards</div>
+              <div class="node-head">
+                <div class="node-icon"><i class="bi bi-list-check" style="color:#ffd06b"></i></div>
+                <h4>Common metadata model</h4>
+              </div>
+              <p>Technique, source, reference frame, variables, units, uncertainty, provenance, download targets.</p>
+            </div>
+
+            <div class="arrow hoverable" data-title="Scientific use and feedback" data-text="The platform should support interpretation, not just display. Users compare products, identify gaps, check provenance, and feed corrections or new data back into the shared repositories.">
+              <div class="arrow-label">Use</div>
+              <div class="shaft"></div>
+            </div>
+
+            <div class="node card-panel hoverable" data-title="Scientific and public value" data-text="The result is a public, interpretable, and reusable VLM discovery layer that supports assessment, communication, and coordination, especially for sea-level and coastal subsidence work.">
+              <div class="tag">Outcome</div>
+              <div class="node-head">
+                <div class="node-icon"><i class="bi bi-layers-fill" style="color:#ff7369"></i></div>
+                <h4>Decision-ready discovery</h4>
+              </div>
+              <p>Find data, compare products, document origin, identify gaps, and download subsets for reuse.</p>
+            </div>
+          </div>
+
+          <div class="explainer" id="explainer">
+            <h4>How to read the diagram</h4>
+            <p>
+              Hover a concept box or arrow to see what it means. The boxes represent data sources, repositories, roles, or outcomes; the arrows represent ingest, build, review, and scientific reuse.
+            </p>
+          </div>
+
+          <div class="flow-legend">
+            <span class="flow-pill"><span class="dot blue"></span>External source</span>
+            <span class="flow-pill"><span class="dot green"></span>GitHub collaboration</span>
+            <span class="flow-pill"><span class="dot gold"></span>Shared standards</span>
+            <span class="flow-pill"><span class="dot red"></span>Public-facing impact</span>
+          </div>
+        </section>
+
+        <section class="important-banner ipls-banner" id="ipls">
+          <div class="eyebrow">Important alignment</div>
+          <h2>This platform should contribute directly and visibly to the IPLS effort.</h2>
+          <p>
+            The <strong>International Panel on Land Subsidence (IPLS)</strong> aims to unite the global subsidence research community, close knowledge gaps on coastal subsidence and relative sea-level rise, foster collaboration across disciplines, consolidate existing knowledge, and support the first assessment report on these issues. This platform is intended to help that effort by making VLM datasets easier to find, inspect, compare, and document in a shared, web-native environment.
+          </p>
+          <div class="inline-links">
+            <a class="pill-button primary" href="https://sites.google.com/view/iplsubsidence/home" target="_blank" rel="noopener">IPLS home</a>
+            <a class="pill-button" href="https://forms.gle/" target="_blank" rel="noopener">Join the mailing list</a>
+          </div>
+        </section>
+
+        <section class="important-banner disclaimer-banner">
+          <div class="eyebrow">Important disclaimer</div>
+          <h2>This is a preliminary showcase website.</h2>
+          <p>
+            The platform concept shown here is an early public-facing showcase, not yet a complete operational data system. All datasets displayed should remain linked to their <strong>original source</strong>, archive, DOI page, repository, or provider record. The website should help users discover, compare, and understand datasets, but it must not obscure provenance, replace required citation, or detach products from their original custodianship.
+          </p>
+        </section>
+      </div>
+    </header>
+
+    <section class="section" id="about-project">
+      <div class="container-page grid-2">
+        <article class="card-panel panel">
+          <h3>About the project</h3>
+          <p>
+            The platform centers on one practical idea: vertical land motion data matter for coastal risk, but they are scattered across disciplines, formats, repositories, and scales. The goal is to create an accessible web layer on top of this fragmented ecosystem so researchers can quickly see what exists, where it comes from, how it was processed, and how different products compare.
+          </p>
+          <p>
+            It is intentionally designed around static deployment, portable metadata, transparent provenance, and community contribution. That lowers operational overhead, improves long-term persistence, and makes the platform easier to maintain even as contributors change over time.
+          </p>
+          <p class="muted">
+            Project context: <a href="https://oelsmann.github.io//portfolio/portfolio-1/" target="_blank" rel="noopener">VLM-SLC project page</a>
+          </p>
+        </article>
+
+        <article class="card-panel panel">
+          <h3>Funding and institutional context</h3>
+          <p>
+            The scientific context of this work is linked to the <strong>Marie Sklodowska-Curie Actions (MSCA)</strong>, part of Horizon Europe. The platform reflects that spirit by connecting research infrastructure, open data, transparent workflows, and international collaboration around sea-level change and coastal subsidence.
+          </p>
+
+          <div class="logos">
+            <a class="logo-chip" href="https://www.tum.de/en/" target="_blank" rel="noopener">
+              <img src="tum_logo.svg" alt="TUM logo">
+              <span><strong>TUM</strong><small>Technical University of Munich</small></span>
+            </a>
+
+            <a class="logo-chip" href="https://tulane.edu/" target="_blank" rel="noopener">
+              <img src="tulane_logo.svg" alt="Tulane University logo">
+              <span><strong>Tulane</strong><small>Tulane University</small></span>
+            </a>
+
+            <a class="logo-chip" href="https://commission.europa.eu/index_en" target="_blank" rel="noopener">
+              <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect width="48" height="48" rx="10" fill="#004494"/>
+                <g fill="#FFCC00">
+                  <circle cx="24" cy="9.5" r="1.7"/><circle cx="31.5" cy="12" r="1.7"/><circle cx="36.5" cy="17.2" r="1.7"/>
+                  <circle cx="38" cy="24" r="1.7"/><circle cx="36.5" cy="30.8" r="1.7"/><circle cx="31.5" cy="36" r="1.7"/>
+                  <circle cx="24" cy="38.5" r="1.7"/><circle cx="16.5" cy="36" r="1.7"/><circle cx="11.5" cy="30.8" r="1.7"/>
+                  <circle cx="10" cy="24" r="1.7"/><circle cx="11.5" cy="17.2" r="1.7"/><circle cx="16.5" cy="12" r="1.7"/>
+                </g>
+              </svg>
+              <span><strong>European Commission</strong><small>EU / Horizon Europe / MSCA context</small></span>
+            </a>
+          </div>
+
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container-page">
+        <div class="features">
+          <div class="feature">
+            <h4>Multi-technique comparison</h4>
+            <p>GNSS, InSAR, tide gauges, GIA models, hybrid estimates, and contextual layers can be viewed in one interface.</p>
+          </div>
+          <div class="feature">
+            <h4>Static by design</h4>
+            <p>GitHub Pages-style delivery reduces infrastructure needs while preserving public access and transparency.</p>
+          </div>
+          <div class="feature">
+            <h4>Reproducible data handling</h4>
+            <p>Each layer should link back to documented sources, scripts, metadata, and citation guidance.</p>
+          </div>
+          <div class="feature">
+            <h4>Built for assessment efforts</h4>
+            <p>The platform is meant to support cross-dataset synthesis and broader coordination, especially within IPLS.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container-page">
+      <div class="card-panel panel">
+        <p style="margin:0">
+          This About page is an initial, editable concept page for the Global VLM Data Platform. It can later be refined with final institutional language, official logo lockups, and direct links to live contribution workflows.
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const explainer = document.getElementById('explainer');
+    const hoverables = document.querySelectorAll('.hoverable');
+    const defaultTitle = 'How to read the diagram';
+    const defaultText = 'Hover a concept box or arrow to see what it means. The boxes represent data sources, repositories, roles, or outcomes; the arrows represent ingest, build, review, and scientific reuse.';
+
+    hoverables.forEach(el => {
+      el.addEventListener('mouseenter', () => {
+        const title = el.dataset.title || defaultTitle;
+        const text = el.dataset.text || defaultText;
+        explainer.innerHTML = `<h4>${title}</h4><p>${text}</p>`;
+      });
+      el.addEventListener('mouseleave', () => {
+        explainer.innerHTML = `<h4>${defaultTitle}</h4><p>${defaultText}</p>`;
+      });
+    });
+  </script>
+</body>
+</html>

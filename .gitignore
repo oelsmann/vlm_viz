@@ -1,0 +1,31 @@
+.DS_Store
+**/.DS_Store
+__pycache__/
+*.py[cod]
+
+# Local/raw data caches. The generated static HTML embeds VLM datasets, and the
+# generator scripts can refetch these sources when needed.
+datasets/
+old/
+
+# External raw datasets are ignored, except for the population sidecar required
+# by the static population layer.
+external_datasets/*
+!external_datasets/ghsl_schiavina_2025/
+external_datasets/ghsl_schiavina_2025/*
+!external_datasets/ghsl_schiavina_2025/ghsl_population_payload.js
+!external_datasets/ghsl_schiavina_2025/ghsl_population_metadata.json
+
+# Development/reference files that are not needed for the deployed website.
+about_global_vlm_platform_v2.html
+index2.html
+
+# Common downloaded scientific data products.
+*.zip
+*.tif
+*.tif.*
+*.ovr
+*.mat
+*.nc
+*.cache.txt
+*~

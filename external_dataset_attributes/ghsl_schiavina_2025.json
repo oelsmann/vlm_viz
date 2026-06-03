@@ -1,0 +1,19 @@
+{
+  "id": "ghsl_schiavina_2025",
+  "label": "Population",
+  "theme": "population",
+  "main_author": "Schiavina",
+  "year": 2025,
+  "doi": "10.2905/adba95af-db56-4569-acd3-9513201eba30",
+  "website_link": "https://human-settlement.emergency.copernicus.eu/ghs_wup_pop_r2025a.php",
+  "original_file_url": "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_WUP_POP_GLOBE_R2025A/GHS_WUP_POP_E2025_GLOBE_R2025A_54009_1000/V1-0/GHS_WUP_POP_E2025_GLOBE_R2025A_54009_1000_V1_0.zip",
+  "sampled_layer": {
+    "width": 9216,
+    "height": 4608,
+    "units": "people per source grid cell",
+    "source_projection": "World Mollweide / WGS 84",
+    "valid_pixel_count": 2810325,
+    "max_population": 154958,
+    "p99_population": 2950
+  }
+}
