@@ -11,7 +11,7 @@
   "abstract": "The associated Eos article describes how expanding geodetic GPS station networks, faster data delivery, and automated processing enable broad Earth-science applications. The NGL MIDAS velocity file used here is one of the station velocity products exposed by that operational geodetic processing system.",
   "time_period_covered": {
     "min": 1994.0041,
-    "max": 2026.371
+    "max": 2026.3901
   },
   "short_description": [
     "NGL MIDAS provides station-based GNSS velocity estimates derived from position time series.",

@@ -10,6 +10,7 @@ from pathlib import Path
 
 MIDAS_URL = "https://geodesy.unr.edu/gps_timeseries/IGS20/midas/midas.IGS.txt"
 README_URL = "https://geodesy.unr.edu/velocities/midas.readme.txt"
+NGL_IMAGED_VLM_URL = "https://geodesy.unr.edu/vlm/VLM_Global_Imaged.txt"
 GIA_URL = "https://vesl.jpl.nasa.gov/solid-earth/gia/downloads/GIA_maps_Caron_Ivins_2019"
 INSAR_URL = "https://zenodo.org/records/15015923/files/gridVLM.zip?download=1"
 GNS_METADATA_URL = "https://data.gns.cri.nz/metadata/srv/eng/catalog.search#/metadata/fdbb8847-c882-4324-ae48-ca7ed9b7433b"
@@ -25,6 +26,7 @@ OELSMANN_HYBRID_NC_URL = "https://zenodo.org/records/19830370/files/Global_VLM_d
 DATASETS_DIR = Path("datasets")
 EXTERNAL_DATASETS_DIR = Path("external_datasets")
 GNSS_DATASET_DIR = DATASETS_DIR / "gnss_blewitt_2018"
+NGL_IMAGED_DATASET_DIR = DATASETS_DIR / "gnss_imaged_hammond_2021"
 GIA_DATASET_DIR = DATASETS_DIR / "gia_caron_2020"
 INSAR_DATASET_DIR = DATASETS_DIR / "insar_ohenhen_2025"
 GNS_DATASET_DIR = DATASETS_DIR / "insar_gnss_hamling_2022"
@@ -33,6 +35,7 @@ OELSMANN_HYBRID_DATASET_DIR = DATASETS_DIR / "hybrid_oelsmann_2026"
 GHSL_POP_DATASET_DIR = EXTERNAL_DATASETS_DIR / "ghsl_schiavina_2025"
 
 CACHE_FILE = GNSS_DATASET_DIR / "midas.IGS.cache.txt"
+NGL_IMAGED_CACHE_FILE = NGL_IMAGED_DATASET_DIR / "VLM_Global_Imaged.txt"
 GIA_CACHE_FILE = GIA_DATASET_DIR / "GIA_maps_Caron_Ivins_2019"
 INSAR_ZIP_FILE = INSAR_DATASET_DIR / "gridVLM.zip"
 INSAR_DIR = INSAR_DATASET_DIR / "gridVLM"
@@ -51,6 +54,7 @@ GHSL_POP_DIR = GHSL_POP_DATASET_DIR / "GHS_WUP_POP_E2025_GLOBE_R2025A_54009_1000
 def ensure_dataset_dirs() -> None:
     for path in (
         GNSS_DATASET_DIR,
+        NGL_IMAGED_DATASET_DIR,
         GIA_DATASET_DIR,
         INSAR_DATASET_DIR,
         GNS_DATASET_DIR,
@@ -65,6 +69,7 @@ def migrate_legacy_dataset_paths() -> None:
     ensure_dataset_dirs()
     moves = [
         (Path("midas.IGS.cache.txt"), CACHE_FILE),
+        (Path("VLM_Global_Imaged.txt"), NGL_IMAGED_CACHE_FILE),
         (Path("GIA_maps_Caron_Ivins_2019"), GIA_CACHE_FILE),
         (Path("gridVLM.zip"), INSAR_ZIP_FILE),
         (Path("gridVLM"), INSAR_DIR),
@@ -129,6 +134,29 @@ def load_raw_midas(force_refresh: bool = False) -> tuple[str, str]:
         ) from exc
 
     CACHE_FILE.write_text(text, encoding="utf-8")
+    return text, "live"
+
+
+def load_raw_ngl_imaged_vlm(force_refresh: bool = False) -> tuple[str, str]:
+    migrate_legacy_dataset_paths()
+    if NGL_IMAGED_CACHE_FILE.exists() and not force_refresh:
+        return NGL_IMAGED_CACHE_FILE.read_text(encoding="utf-8"), "cache"
+
+    try:
+        text = fetch_text(NGL_IMAGED_VLM_URL, timeout=180)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        if NGL_IMAGED_CACHE_FILE.exists():
+            print(
+                f"Warning: NGL imaged VLM live fetch failed ({exc}); using existing cache.",
+                file=sys.stderr,
+            )
+            return NGL_IMAGED_CACHE_FILE.read_text(encoding="utf-8"), "cache-after-fetch-error"
+        raise RuntimeError(
+            f"Could not fetch {NGL_IMAGED_VLM_URL} and no NGL imaged VLM cache exists. "
+            "Check the network connection, then rerun this script."
+        ) from exc
+
+    NGL_IMAGED_CACHE_FILE.write_text(text, encoding="utf-8")
     return text, "live"
 
 

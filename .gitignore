@@ -3,9 +3,37 @@
 __pycache__/
 *.py[cod]
 
-# Local/raw data caches. The generated static HTML embeds VLM datasets, and the
-# generator scripts can refetch these sources when needed.
-datasets/
+# Local/raw data caches. Static pages load generated render payloads from
+# render_payloads/ while raw source downloads stay ignored.
+datasets/*
+!datasets/gnss_blewitt_2018/
+datasets/gnss_blewitt_2018/*
+!datasets/gnss_blewitt_2018/render_payloads/
+!datasets/gnss_imaged_hammond_2021/
+datasets/gnss_imaged_hammond_2021/*
+!datasets/gnss_imaged_hammond_2021/render_payloads/
+!datasets/gia_caron_2020/
+datasets/gia_caron_2020/*
+!datasets/gia_caron_2020/render_payloads/
+!datasets/insar_ohenhen_2025/
+datasets/insar_ohenhen_2025/*
+!datasets/insar_ohenhen_2025/render_payloads/
+!datasets/insar_gnss_hamling_2022/
+datasets/insar_gnss_hamling_2022/*
+!datasets/insar_gnss_hamling_2022/render_payloads/
+!datasets/hybrid_oelsmann_2026/
+datasets/hybrid_oelsmann_2026/*
+!datasets/hybrid_oelsmann_2026/render_payloads/
+!datasets/tide_gauge_dangendorf_2026/
+datasets/tide_gauge_dangendorf_2026/*
+!datasets/tide_gauge_dangendorf_2026/render_payloads/
+!datasets/gnss_blewitt_2018/render_payloads/*.json
+!datasets/gnss_imaged_hammond_2021/render_payloads/*.json
+!datasets/gia_caron_2020/render_payloads/*.json
+!datasets/insar_ohenhen_2025/render_payloads/*.json
+!datasets/insar_gnss_hamling_2022/render_payloads/*.json
+!datasets/hybrid_oelsmann_2026/render_payloads/*.json
+!datasets/tide_gauge_dangendorf_2026/render_payloads/*.json
 old/
 
 # External raw datasets are ignored, except for the population sidecar required

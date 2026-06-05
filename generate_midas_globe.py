@@ -29,6 +29,7 @@ from vlm_dataset_sources import (
     INSAR_DIR,
     INSAR_URL,
     MIDAS_URL,
+    NGL_IMAGED_VLM_URL,
     OELSMANN_HYBRID_NC_FILE,
     OELSMANN_HYBRID_NC_URL,
     OELSMANN_HYBRID_RECORD_URL,
@@ -43,6 +44,7 @@ from vlm_dataset_sources import (
     ensure_tide_gauge_dataset,
     load_raw_gia,
     load_raw_midas,
+    load_raw_ngl_imaged_vlm,
 )
 
 ATTRIBUTE_DIR = Path("dataset_attributes")
@@ -51,6 +53,23 @@ OUTPUT_HTML = Path("index.html")
 CATALOG_HTML = Path("catalogue.html")
 ABOUT_HTML = Path("about.html")
 COMPARE_HTML = Path("compare.html")
+UNCERTAINTY_PAYLOADS = {
+    "gnss_blewitt_2018": Path("datasets/gnss_blewitt_2018/render_payloads/uncertainty.json"),
+    "gnss_imaged_hammond_2021": Path("datasets/gnss_imaged_hammond_2021/render_payloads/uncertainty.json"),
+    "gia_caron_2020": Path("datasets/gia_caron_2020/render_payloads/uncertainty.json"),
+    "insar_gnss_hamling_2022": Path("datasets/insar_gnss_hamling_2022/render_payloads/uncertainty.json"),
+    "hybrid_oelsmann_2026": Path("datasets/hybrid_oelsmann_2026/render_payloads/uncertainty.json"),
+    "tide_gauge_dangendorf_2026": Path("datasets/tide_gauge_dangendorf_2026/render_payloads/uncertainty.json"),
+}
+RENDER_PAYLOADS = {
+    "gnss_blewitt_2018": Path("datasets/gnss_blewitt_2018/render_payloads/trends.json"),
+    "gnss_imaged_hammond_2021": Path("datasets/gnss_imaged_hammond_2021/render_payloads/trends.json"),
+    "gia_caron_2020": Path("datasets/gia_caron_2020/render_payloads/trends.json"),
+    "insar_ohenhen_2025": Path("datasets/insar_ohenhen_2025/render_payloads/trends.json"),
+    "insar_gnss_hamling_2022": Path("datasets/insar_gnss_hamling_2022/render_payloads/trends.json"),
+    "hybrid_oelsmann_2026": Path("datasets/hybrid_oelsmann_2026/render_payloads/trends.json"),
+    "tide_gauge_dangendorf_2026": Path("datasets/tide_gauge_dangendorf_2026/render_payloads/trends.json"),
+}
 TIDE_GAUGE_PROCESSED_CACHE = Path("datasets/tide_gauge_dangendorf_2026/csl_tg_processed.json")
 TIDE_GAUGE_NEARBY_GNSS_CACHE = Path("datasets/tide_gauge_dangendorf_2026/tg_nearby_gnss.json")
 POPULATION_PAYLOAD_JS = Path("external_datasets/ghsl_schiavina_2025/ghsl_population_payload.js")
@@ -219,11 +238,13 @@ def parse_midas(text: str) -> tuple[list[dict], dict]:
     return records, metadata
 
 
-def parse_gia_grid(text: str) -> tuple[list[float | None], dict]:
+def parse_gia_grid(text: str) -> tuple[list[float | None], list[float | None], dict]:
     width = 360
     height = 180
     values: list[float | None] = [None] * (width * height)
+    uncertainties: list[float | None] = [None] * (width * height)
     parsed_values: list[float] = []
+    parsed_uncertainties: list[float] = []
     malformed = 0
 
     for line in text.splitlines():
@@ -239,6 +260,7 @@ def parse_gia_grid(text: str) -> tuple[list[float | None], dict]:
         colatitude = parse_float(tokens[0])
         longitude = parse_float(tokens[1])
         vertical_land_motion = parse_float(tokens[2])
+        vertical_land_motion_uncertainty = parse_float(tokens[3]) if len(tokens) > 3 else None
         if colatitude is None or longitude is None or vertical_land_motion is None:
             malformed += 1
             continue
@@ -253,6 +275,10 @@ def parse_gia_grid(text: str) -> tuple[list[float | None], dict]:
             value = round(vertical_land_motion, 3)
             values[y * width + x] = value
             parsed_values.append(value)
+            if vertical_land_motion_uncertainty is not None:
+                uncertainty = round(vertical_land_motion_uncertainty, 3)
+                uncertainties[y * width + x] = uncertainty
+                parsed_uncertainties.append(uncertainty)
         else:
             malformed += 1
 
@@ -274,8 +300,131 @@ def parse_gia_grid(text: str) -> tuple[list[float | None], dict]:
         "min_mm_yr": round(min(parsed_values), 3),
         "max_mm_yr": round(max(parsed_values), 3),
         "max_abs_mm_yr": round(max(abs(v) for v in parsed_values), 3),
+        "uncertainty_component": "Tsdur",
+        "uncertainty_count": len(parsed_uncertainties),
+        "min_sigma_mm_yr": round(min(parsed_uncertainties), 3) if parsed_uncertainties else None,
+        "max_sigma_mm_yr": round(max(parsed_uncertainties), 3) if parsed_uncertainties else None,
     }
-    return values, metadata
+    return values, uncertainties, metadata
+
+
+def parse_ngl_imaged_vlm_grid(text: str) -> tuple[list[float | None], list[float | None], dict]:
+    width = 360
+    min_lat = -90
+    max_lat = 84
+    height = max_lat - min_lat
+    cell_count = width * height
+    trend_sums = [0.0] * cell_count
+    uncertainty_sums = [0.0] * cell_count
+    zeta_sums = [0.0] * cell_count
+    counts = [0] * cell_count
+    uncertainty_counts = [0] * cell_count
+    zeta_counts = [0] * cell_count
+    source_lons: set[float] = set()
+    source_lats: set[float] = set()
+    parsed_values: list[float] = []
+    parsed_uncertainties: list[float] = []
+    parsed_zetas: list[float] = []
+    malformed = 0
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("%"):
+            continue
+
+        tokens = stripped.split()
+        if len(tokens) < 5:
+            malformed += 1
+            continue
+
+        lon = parse_float(tokens[0])
+        lat = parse_float(tokens[1])
+        trend = parse_float(tokens[2])
+        uncertainty = parse_float(tokens[3])
+        zeta = parse_float(tokens[4])
+        if lon is None or lat is None or trend is None:
+            malformed += 1
+            continue
+
+        source_lons.add(lon)
+        source_lats.add(lat)
+        lon_norm = normalize_longitude(lon)
+        x = int(math.floor(lon_norm + 180.0))
+        if x == width:
+            x = 0
+        y = int(math.floor(lat - min_lat))
+        if x < 0 or x >= width or y < 0 or y >= height:
+            malformed += 1
+            continue
+
+        index = y * width + x
+        trend_sums[index] += trend
+        counts[index] += 1
+        parsed_values.append(trend)
+
+        if uncertainty is not None:
+            uncertainty_sums[index] += uncertainty
+            uncertainty_counts[index] += 1
+            parsed_uncertainties.append(uncertainty)
+        if zeta is not None:
+            zeta_sums[index] += zeta
+            zeta_counts[index] += 1
+            parsed_zetas.append(zeta)
+
+    values: list[float | None] = [None] * cell_count
+    uncertainties: list[float | None] = [None] * cell_count
+    zetas: list[float | None] = [None] * cell_count
+    for index, count in enumerate(counts):
+        if count <= 0:
+            continue
+        values[index] = round(trend_sums[index] / count, 4)
+        if uncertainty_counts[index] > 0:
+            uncertainties[index] = round(uncertainty_sums[index] / uncertainty_counts[index], 4)
+        if zeta_counts[index] > 0:
+            zetas[index] = round(zeta_sums[index] / zeta_counts[index], 4)
+
+    rendered_values = [value for value in values if value is not None]
+    rendered_uncertainties = [value for value in uncertainties if value is not None]
+    if not rendered_values:
+        raise RuntimeError("No valid NGL GPS Imaging VLM grid records were parsed.")
+
+    metadata = {
+        "source_url": NGL_IMAGED_VLM_URL,
+        "publication": "Hammond et al. (2021)",
+        "component": "Vu",
+        "uncertainty_component": "Vu uncertainty",
+        "zeta_component": "nearest-neighbor spatial variability in Vu",
+        "description": "GPS Imaging interpolated vertical land motion on Earth's land masses",
+        "units": "mm/yr",
+        "source_cell_size_degrees": 0.25,
+        "render_cell_size_degrees": 1,
+        "render_aggregation": "mean of source quarter-degree samples within each one-degree cell",
+        "width": width,
+        "height": height,
+        "bounds": [-180, min_lat, 180, max_lat],
+        "value_count": len(rendered_values),
+        "source_record_count": len(parsed_values),
+        "malformed_rows_skipped": malformed,
+        "source_lon_count": len(source_lons),
+        "source_lat_count": len(source_lats),
+        "source_bounds": [
+            round(min(source_lons), 4) if source_lons else None,
+            round(min(source_lats), 4) if source_lats else None,
+            round(max(source_lons), 4) if source_lons else None,
+            round(max(source_lats), 4) if source_lats else None,
+        ],
+        "min_mm_yr": round(min(rendered_values), 4),
+        "max_mm_yr": round(max(rendered_values), 4),
+        "max_abs_mm_yr": round(max(abs(v) for v in rendered_values), 4),
+        "median_mm_yr": round(percentile(rendered_values, 0.5), 4),
+        "uncertainty_count": len(rendered_uncertainties),
+        "min_sigma_mm_yr": round(min(rendered_uncertainties), 4) if rendered_uncertainties else None,
+        "max_sigma_mm_yr": round(max(rendered_uncertainties), 4) if rendered_uncertainties else None,
+        "min_zeta_mm_yr": round(min(parsed_zetas), 4) if parsed_zetas else None,
+        "max_zeta_mm_yr": round(max(parsed_zetas), 4) if parsed_zetas else None,
+        "zeta_values": zetas,
+    }
+    return values, uncertainties, metadata
 
 
 TIFF_TYPE_SIZES = {
@@ -1600,6 +1749,7 @@ TIDE_GAUGE_CLASSIFICATION = {
 
 def build_dataset_attributes(
     records: list[dict],
+    ngl_imaged_metadata: dict,
     gia_metadata: dict,
     insar_grids: list[dict],
     gns_records: list[dict],
@@ -1633,6 +1783,46 @@ def build_dataset_attributes(
             "coverage": bounds_from_records(records),
             "uncertainty_provided": True,
             **GNSS_CLASSIFICATION,
+        },
+        "gnss_imaged_hammond_2021": {
+            "id": "gnss_imaged_hammond_2021",
+            "label": "NGL imaged VLM",
+            "technique": "GNSS",
+            "display_name": "NGL GPS Imaging interpolated VLM - Hammond et al. 2021",
+            "authors": "Hammond, W. C., Blewitt, G., Kreemer, C., and Nerem, R. S.",
+            "citation": "Hammond, W. C., G. Blewitt, C. Kreemer, and S. Nerem (2021), Global vertical land motion for studies of sea level rise, Journal of Geophysical Research: Solid Earth, 126(7), e2021JB022355.",
+            "doi": "10.1029/2021JB022355",
+            "original_file_url": NGL_IMAGED_VLM_URL,
+            "metadata_url": "https://geodesy.unr.edu/vlm.php",
+            "publication_year": 2021,
+            "abstract": "The associated JGR Solid Earth paper uses GPS Imaging to estimate rates and patterns of vertical land motion on Earth's land surface from globally processed GNSS station velocities. The product provides gridded vertical rate estimates, formal uncertainty, and nearest-neighbor spatial variability for sea-level applications.",
+            "time_period_covered": None,
+            "short_description": [
+                "This layer renders the NGL GPS Imaging interpolated vertical land motion product.",
+                "The source text file provides longitude, latitude, vertical rate, formal uncertainty, and nearest-neighbor spatial variability in mm/yr.",
+                "For browser performance the quarter-degree source samples are aggregated into one-degree render polygons.",
+            ],
+            "coverage": bounds_from_grid_bounds([ngl_imaged_metadata["bounds"]]),
+            "rendered_file": "datasets/gnss_imaged_hammond_2021/VLM_Global_Imaged.txt",
+            "source_variable": ngl_imaged_metadata["component"],
+            "uncertainty_variable": ngl_imaged_metadata["uncertainty_component"],
+            "spatial_variability_variable": ngl_imaged_metadata["zeta_component"],
+            "source_record_count": ngl_imaged_metadata["source_record_count"],
+            "record_count_rendered": ngl_imaged_metadata["value_count"],
+            "source_cell_size_degrees": ngl_imaged_metadata["source_cell_size_degrees"],
+            "render_cell_size_degrees": ngl_imaged_metadata["render_cell_size_degrees"],
+            "value_range_mm_yr": {
+                "min": ngl_imaged_metadata["min_mm_yr"],
+                "max": ngl_imaged_metadata["max_mm_yr"],
+                "median": ngl_imaged_metadata["median_mm_yr"],
+            },
+            "uncertainty_provided": True,
+            **GNSS_CLASSIFICATION,
+            "vlm_note": "Interpolated GNSS Imaging estimate of vertical land motion derived from globally processed GNSS station velocities.",
+            "vlm_measurement_type": "interpolated",
+            "anchor_depth_note": "Derived from GNSS monument velocities; no single physical anchor depth for interpolated grid cells.",
+            "process_influence_note": "This is a gridded GPS Imaging product derived from GNSS station velocities rather than a direct measurement at every grid cell. It can contain shallow and deep VLM signals represented in the contributing GNSS network, with uncertainty and nearest-neighbor spatial variability supplied by the source product.",
+            "classification_confidence": "medium",
         },
         "gia_caron_2020": {
             "id": "gia_caron_2020",
@@ -1849,9 +2039,129 @@ def html_escape_json(value: object) -> str:
     )
 
 
+def strip_uncertainty_fields(records: list[dict]) -> list[dict]:
+    return [{key: value for key, value in record.items() if key != "up_sigma_mm_yr"} for record in records]
+
+
+def write_json_payload(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(html_escape_json(payload), encoding="utf-8")
+
+
+def point_uncertainty_payload(records: list[dict], id_field: str) -> dict:
+    values = [
+        [record.get(id_field), record.get("up_sigma_mm_yr")]
+        for record in records
+        if record.get(id_field) is not None
+        and record.get("up_sigma_mm_yr") is not None
+        and math.isfinite(float(record.get("up_sigma_mm_yr")))
+    ]
+    sigmas = [float(value[1]) for value in values]
+    return {
+        "type": "point_uncertainty",
+        "id_field": id_field,
+        "units": "mm/yr",
+        "values": values,
+        "min": round(min(sigmas), 4) if sigmas else None,
+        "max": round(percentile(sigmas, 0.99), 4) if sigmas else None,
+        "raw_max": round(max(sigmas), 4) if sigmas else None,
+    }
+
+
+def write_uncertainty_payloads(
+    records: list[dict],
+    ngl_imaged_uncertainties: list[float | None],
+    ngl_imaged_metadata: dict,
+    gia_uncertainties: list[float | None],
+    gia_metadata: dict,
+    gns_records: list[dict],
+    tide_gauge_records: list[dict],
+    oelsmann_hybrid_records: list[dict],
+) -> dict[str, str]:
+    payloads = {
+        "gnss_blewitt_2018": point_uncertainty_payload(records, "station"),
+        "gnss_imaged_hammond_2021": {
+            "type": "grid_uncertainty",
+            "units": "mm/yr",
+            "component": ngl_imaged_metadata.get("uncertainty_component", "Vu uncertainty"),
+            "width": ngl_imaged_metadata["width"],
+            "height": ngl_imaged_metadata["height"],
+            "bounds": ngl_imaged_metadata["bounds"],
+            "values": ngl_imaged_uncertainties,
+            "min": ngl_imaged_metadata.get("min_sigma_mm_yr"),
+            "max": ngl_imaged_metadata.get("max_sigma_mm_yr"),
+        },
+        "gia_caron_2020": {
+            "type": "grid_uncertainty",
+            "units": "mm/yr",
+            "component": gia_metadata.get("uncertainty_component", "Tsdur"),
+            "width": gia_metadata["width"],
+            "height": gia_metadata["height"],
+            "bounds": gia_metadata["bounds"],
+            "values": gia_uncertainties,
+            "min": gia_metadata.get("min_sigma_mm_yr"),
+            "max": gia_metadata.get("max_sigma_mm_yr"),
+        },
+        "insar_gnss_hamling_2022": point_uncertainty_payload(gns_records, "id"),
+        "hybrid_oelsmann_2026": point_uncertainty_payload(oelsmann_hybrid_records, "id"),
+        "tide_gauge_dangendorf_2026": point_uncertainty_payload(tide_gauge_records, "id"),
+    }
+    for dataset_id, payload in payloads.items():
+        write_json_payload(UNCERTAINTY_PAYLOADS[dataset_id], payload)
+    return {dataset_id: path.as_posix() for dataset_id, path in UNCERTAINTY_PAYLOADS.items()}
+
+
+def write_render_payloads(
+    records: list[dict],
+    ngl_imaged_values: list[float | None],
+    gia_values: list[float | None],
+    insar_grids: list[dict],
+    gns_records: list[dict],
+    tide_gauge_records: list[dict],
+    oelsmann_hybrid_records: list[dict],
+) -> dict[str, str]:
+    positive_records, negative_records = split_records(records)
+    payloads = {
+        "gnss_blewitt_2018": {
+            "type": "station_split",
+            "positive": strip_uncertainty_fields(positive_records),
+            "negative": strip_uncertainty_fields(negative_records),
+        },
+        "gnss_imaged_hammond_2021": {
+            "type": "grid_trend",
+            "values": ngl_imaged_values,
+        },
+        "gia_caron_2020": {
+            "type": "grid_trend",
+            "values": gia_values,
+        },
+        "insar_ohenhen_2025": {
+            "type": "insar_grids",
+            "grids": insar_grids,
+        },
+        "insar_gnss_hamling_2022": {
+            "type": "point_trend",
+            "records": strip_uncertainty_fields(gns_records),
+        },
+        "hybrid_oelsmann_2026": {
+            "type": "point_trend",
+            "records": strip_uncertainty_fields(oelsmann_hybrid_records),
+        },
+        "tide_gauge_dangendorf_2026": {
+            "type": "point_trend",
+            "records": strip_uncertainty_fields(tide_gauge_records),
+        },
+    }
+    for dataset_id, payload in payloads.items():
+        write_json_payload(RENDER_PAYLOADS[dataset_id], payload)
+    return {dataset_id: path.as_posix() for dataset_id, path in RENDER_PAYLOADS.items()}
+
+
 def build_html(
     records: list[dict],
     metadata: dict,
+    ngl_imaged_values: list[float | None],
+    ngl_imaged_metadata: dict,
     gia_values: list[float | None],
     gia_metadata: dict,
     insar_grids: list[dict],
@@ -1865,24 +2175,23 @@ def build_html(
     dataset_attributes: dict[str, dict],
     population_metadata: dict,
     external_dataset_attributes: dict[str, dict],
+    render_urls: dict[str, str],
+    uncertainty_urls: dict[str, str],
 ) -> str:
-    positive_records, negative_records = split_records(records)
-    positive_json = html_escape_json(positive_records)
-    negative_json = html_escape_json(negative_records)
     metadata_json = html_escape_json(metadata)
-    gia_values_json = html_escape_json(gia_values)
+    ngl_imaged_metadata_json = html_escape_json(
+        {key: value for key, value in ngl_imaged_metadata.items() if key != "zeta_values"}
+    )
     gia_metadata_json = html_escape_json(gia_metadata)
-    insar_grids_json = html_escape_json(insar_grids)
     insar_metadata_json = html_escape_json(insar_metadata)
-    gns_records_json = html_escape_json(gns_records)
     gns_metadata_json = html_escape_json(gns_metadata)
-    tide_gauge_records_json = html_escape_json(tide_gauge_records)
     tide_gauge_metadata_json = html_escape_json(tide_gauge_metadata)
-    oelsmann_hybrid_records_json = html_escape_json(oelsmann_hybrid_records)
     oelsmann_hybrid_metadata_json = html_escape_json(oelsmann_hybrid_metadata)
     dataset_attributes_json = html_escape_json(dataset_attributes)
     population_metadata_json = html_escape_json(population_metadata)
     external_dataset_attributes_json = html_escape_json(external_dataset_attributes)
+    render_urls_json = html_escape_json(render_urls)
+    uncertainty_urls_json = html_escape_json(uncertainty_urls)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1948,6 +2257,10 @@ def build_html(
       text-decoration: underline;
     }}
 
+    .brand-short {{
+      display: none;
+    }}
+
     .navbar-stat {{
       display: none;
       color: #46576a;
@@ -1989,7 +2302,30 @@ def build_html(
       font-weight: 650;
       line-height: 1.35;
       text-align: center;
-      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      pointer-events: auto;
+    }}
+
+    .showcase-disclaimer-close {{
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      color: #5a4a16;
+      background: rgba(90, 74, 22, 0.1);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      padding: 0;
+    }}
+
+    .showcase-disclaimer-close:hover,
+    .showcase-disclaimer-close:focus {{
+      background: rgba(90, 74, 22, 0.18);
     }}
 
     @media (min-width: 860px) {{
@@ -2007,7 +2343,8 @@ def build_html(
 
     .offcanvas-gis {{
       top: var(--nav-height);
-      height: calc(100vh - var(--nav-height));
+      bottom: 0;
+      height: auto;
       width: min(430px, calc(100vw - 18px));
       border-right: 1px solid var(--panel-border);
       box-shadow: 10px 0 28px rgba(20, 32, 46, 0.18);
@@ -2059,6 +2396,32 @@ def build_html(
       padding: 10px 11px;
     }}
 
+    .dataset-row.unavailable {{
+      opacity: 0.58;
+    }}
+
+    .dataset-row.unavailable .dataset-title-link {{
+      color: #8b98a8;
+    }}
+
+    .dataset-row.loading .dataset-icon i {{
+      display: none;
+    }}
+
+    .dataset-row.loading .dataset-icon::after {{
+      content: "";
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-top-color: #fff;
+      border-radius: 999px;
+      animation: dataset-spin 0.75s linear infinite;
+    }}
+
+    @keyframes dataset-spin {{
+      to {{ transform: rotate(360deg); }}
+    }}
+
     .dataset-icon {{
       width: 32px;
       height: 32px;
@@ -2077,9 +2440,30 @@ def build_html(
       font-weight: 700;
     }}
 
+    .dataset-title-link {{
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      display: inline;
+      font: inherit;
+      font-weight: inherit;
+      padding: 0;
+      text-align: left;
+    }}
+
+    .dataset-title-link:hover,
+    .dataset-title-link:focus {{
+      color: #24476f;
+      text-decoration: underline;
+    }}
+
     .dataset-detail {{
       color: var(--panel-muted);
       font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }}
 
     .dataset-actions {{
@@ -2089,7 +2473,6 @@ def build_html(
       flex: 0 0 auto;
     }}
 
-    .dataset-info-btn,
     .dataset-download-btn {{
       width: 22px;
       height: 22px;
@@ -2104,8 +2487,6 @@ def build_html(
       font-size: 13px;
     }}
 
-    .dataset-info-btn:hover,
-    .dataset-info-btn:focus,
     .dataset-download-btn:hover,
     .dataset-download-btn:focus {{
       color: #24476f;
@@ -2122,12 +2503,13 @@ def build_html(
 
     .selector-tool-popover {{
       width: 38px;
-      padding: 8px 0;
+      padding: 8px 0 9px;
       border-top: 1px solid #d6dee8;
       background: rgba(255, 255, 255, 0.98);
       display: grid;
       justify-items: center;
-      gap: 8px;
+      gap: 9px;
+      overflow: hidden;
     }}
 
     .selector-tool-popover[hidden] {{
@@ -2199,8 +2581,14 @@ def build_html(
       display: grid;
       place-items: center;
       font-size: 17px;
-      line-height: 1;
+      line-height: 0;
+      padding: 0;
       border-radius: 8px;
+    }}
+
+    .selector-tool-button > i {{
+      display: block;
+      line-height: 1;
     }}
 
     .selector-tool-button.active {{
@@ -2227,11 +2615,12 @@ def build_html(
     }}
 
     .selector-vertical-range {{
-      width: 28px;
-      height: 142px;
+      width: 30px;
+      height: 118px;
       writing-mode: vertical-lr;
       direction: rtl;
       accent-color: #0d6efd;
+      margin: 0;
     }}
 
     .selector-histogram-btn {{
@@ -2243,6 +2632,13 @@ def build_html(
       place-items: center;
       color: #263241;
       background: transparent;
+      line-height: 0;
+      padding: 0;
+    }}
+
+    .selector-histogram-btn > i {{
+      display: block;
+      line-height: 1;
     }}
 
     .selector-histogram-btn:disabled {{
@@ -2659,6 +3055,12 @@ def build_html(
       display: grid;
       place-items: center;
       font-size: 17px;
+      line-height: 0;
+      padding: 0;
+    }}
+
+    .zoom-control > button > i {{
+      display: block;
       line-height: 1;
     }}
 
@@ -2677,10 +3079,28 @@ def build_html(
       border-radius: 8px;
       padding: 10px 12px;
       box-shadow: 0 4px 18px rgba(20, 32, 46, 0.18);
+      position: relative;
     }}
 
     .legend[hidden] {{
       display: none;
+    }}
+
+    .legend-toggle {{
+      display: none;
+      border: 0;
+      border-radius: 7px;
+      background: #eef3f8;
+      color: #263241;
+      width: 34px;
+      height: 32px;
+      place-items: center;
+      padding: 0;
+    }}
+
+    .legend-toggle:hover,
+    .legend-toggle:focus-visible {{
+      background: #e2eaf3;
     }}
 
     .legend-title {{
@@ -2701,6 +3121,10 @@ def build_html(
       background: linear-gradient(90deg, rgb(255,252,214), rgb(253,179,75), rgb(214,74,64), rgb(84,39,143));
     }}
 
+    .legend-ramp.uncertainty-ramp {{
+      background: linear-gradient(90deg, rgb(255,247,188), rgb(254,196,79), rgb(217,95,14), rgb(127,0,0));
+    }}
+
     .legend-labels {{
       display: flex;
       justify-content: space-between;
@@ -2710,32 +3134,112 @@ def build_html(
       font-weight: 700;
     }}
 
-    .attribution {{
-      position: absolute;
-      left: 12px;
-      bottom: 10px;
-      z-index: 900;
-      background: rgba(33, 38, 43, 0.9);
-      color: #e9edf2;
-      border: 1px solid rgba(255,255,255,0.16);
-      border-radius: 7px;
-      padding: 6px 9px;
-      font-size: 11px;
-      line-height: 1.35;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.22);
+    .legend-scale-control {{
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px solid #e1e7ef;
     }}
 
-    .attribution a {{
+    .legend-scale-control .control-label {{
+      margin-bottom: 3px;
+    }}
+
+    .legend-scale-control .form-range {{
+      margin: 0;
+    }}
+
+    .render-variable-control {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin-bottom: 8px;
+    }}
+
+    .render-variable-control input {{
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }}
+
+    .render-variable-control label {{
+      border: 1px solid #ccd6e2;
+      border-radius: 6px;
+      background: #fff;
+      color: #344559;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      padding: 6px 8px;
+      text-align: center;
+    }}
+
+    .render-variable-control input:checked + label {{
+      background: #24476f;
+      border-color: #24476f;
       color: #fff;
     }}
 
     @media (max-width: 640px) {{
+      html {{
+        font-size: 13px;
+      }}
+
+      .brand-long {{
+        display: none;
+      }}
+
+      .brand-short {{
+        display: inline;
+      }}
+
+      .app-navbar {{
+        padding-left: 9px !important;
+        padding-right: 9px !important;
+      }}
+
+      .nav-link {{
+        padding-left: 8px;
+        padding-right: 8px;
+      }}
+
+      .nav-link span {{
+        display: none !important;
+      }}
+
       .navbar-stat {{
         display: none;
       }}
 
       .legend {{
         width: 100%;
+      }}
+
+      .vlm-legend .legend-toggle {{
+        display: grid;
+        position: absolute;
+        top: 8px;
+        right: 8px;
+      }}
+
+      .vlm-legend .legend-body {{
+        padding-right: 38px;
+      }}
+
+      .vlm-legend.collapsed {{
+        width: auto;
+        justify-self: end;
+        padding: 6px;
+      }}
+
+      .vlm-legend.collapsed .legend-body {{
+        display: none;
+      }}
+
+      .vlm-legend.collapsed .legend-toggle {{
+        position: static;
+        width: 38px;
+        height: 36px;
       }}
 
       .legend-stack {{
@@ -2751,6 +3255,33 @@ def build_html(
       .selector-control {{
         right: 10px;
       }}
+
+      .selector-tool-popover {{
+        position: absolute;
+        top: 0;
+        right: 46px;
+        width: min(190px, calc(100vw - 66px));
+        min-height: 36px;
+        padding: 5px 7px;
+        border: 1px solid #d6dee8;
+        border-radius: 8px;
+        grid-template-columns: 28px minmax(0, 1fr) 30px;
+        align-items: center;
+        gap: 7px;
+        box-shadow: 0 4px 18px rgba(20, 32, 46, 0.18);
+      }}
+
+      .selector-tool-button.active {{
+        border-bottom: 0;
+        border-radius: 8px;
+      }}
+
+      .selector-vertical-range {{
+        width: 100%;
+        height: auto;
+        writing-mode: horizontal-tb;
+        direction: ltr;
+      }}
     }}
   </style>
 </head>
@@ -2761,7 +3292,7 @@ def build_html(
         <i class="bi bi-layers"></i>
       </button>
       <div class="brand-stack me-auto">
-        <div class="brand-title"><a href="index.html">Global Vertical Land Motion</a></div>
+        <div class="brand-title"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
       </div>
       <div class="navbar-stat align-items-center gap-2">
         <i class="bi bi-broadcast-pin"></i>
@@ -2782,8 +3313,11 @@ def build_html(
     </div>
   </nav>
 
-  <div class="showcase-disclaimer">
-    Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Please cite original data sources, DOIs, and associated papers when using any dataset.
+  <div class="showcase-disclaimer" id="showcaseDisclaimer">
+    <span>Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Please cite original data sources, DOIs, and associated papers when using any dataset.</span>
+    <button class="showcase-disclaimer-close" type="button" id="showcaseDisclaimerClose" aria-label="Dismiss preliminary showcase notice">
+      <i class="bi bi-x-lg"></i>
+    </button>
   </div>
 
   <div id="deck-container"></div>
@@ -2818,7 +3352,7 @@ def build_html(
     </div>
   </div>
 
-  <aside class="offcanvas offcanvas-start offcanvas-gis show" data-bs-scroll="true" data-bs-backdrop="false" tabindex="-1" id="layerPanel" aria-labelledby="layerPanelLabel">
+  <aside class="offcanvas offcanvas-start offcanvas-gis" data-bs-scroll="true" data-bs-backdrop="false" tabindex="-1" id="layerPanel" aria-labelledby="layerPanelLabel">
     <div class="offcanvas-header py-3">
       <h5 class="offcanvas-title fs-6 fw-bold" id="layerPanelLabel">Layers</h5>
       <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
@@ -2836,21 +3370,34 @@ def build_html(
             </h2>
             <div id="group-gnss" class="accordion-collapse collapse show" aria-labelledby="heading-gnss">
               <div class="accordion-body px-0 py-1">
-                <div class="dataset-row">
+                <div class="dataset-row" data-layer-row="gnss_blewitt_2018">
                   <div class="dataset-icon"><i class="bi bi-crosshair"></i></div>
                   <div class="flex-grow-1 min-w-0">
-                    <div class="dataset-name">GPS</div>
-                    <div class="dataset-detail">NGL MIDAS station velocities</div>
+                    <div class="dataset-name"><button class="dataset-title-link" type="button" data-dataset-info="gnss_blewitt_2018">GPS</button></div>
+                    <div class="dataset-detail" title="NGL MIDAS station velocities (1994-2026)">NGL MIDAS station velo...</div>
                   </div>
                   <div class="dataset-actions">
-                    <button class="dataset-info-btn" type="button" data-dataset-info="gnss_blewitt_2018" aria-label="GPS dataset information">
-                      <i class="bi bi-info-circle"></i>
-                    </button>
                     <button class="dataset-download-btn" type="button" data-dataset-download="gnss_blewitt_2018" aria-label="GPS original data download">
                       <i class="bi bi-download"></i>
                     </button>
                     <div class="form-check form-switch m-0">
-                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-gps" checked>
+                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-gps" data-dataset-toggle="gnss_blewitt_2018" checked>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="dataset-row mt-2" data-layer-row="gnss_imaged_hammond_2021">
+                  <div class="dataset-icon"><i class="bi bi-grid-3x3-gap"></i></div>
+                  <div class="flex-grow-1 min-w-0">
+                    <div class="dataset-name"><button class="dataset-title-link" type="button" data-dataset-info="gnss_imaged_hammond_2021">NGL GPS Imaging</button></div>
+                    <div class="dataset-detail" title="Hammond et al. interpolated GNSS VLM">Hammond interpolated G...</div>
+                  </div>
+                  <div class="dataset-actions">
+                    <button class="dataset-download-btn" type="button" data-dataset-download="gnss_imaged_hammond_2021" aria-label="NGL GPS Imaging original data download">
+                      <i class="bi bi-download"></i>
+                    </button>
+                    <div class="form-check form-switch m-0">
+                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-ngl-imaged" data-dataset-toggle="gnss_imaged_hammond_2021">
                     </div>
                   </div>
                 </div>
@@ -2866,21 +3413,18 @@ def build_html(
             </h2>
             <div id="group-gia" class="accordion-collapse collapse show" aria-labelledby="heading-gia">
               <div class="accordion-body px-0 py-1">
-                <div class="dataset-row">
+                <div class="dataset-row" data-layer-row="gia_caron_2020">
                   <div class="dataset-icon"><i class="bi bi-grid-3x3"></i></div>
                   <div class="flex-grow-1 min-w-0">
-                    <div class="dataset-name">GIA</div>
-                    <div class="dataset-detail">Caron and Ivins 2019 gridded VLM</div>
+                    <div class="dataset-name"><button class="dataset-title-link" type="button" data-dataset-info="gia_caron_2020">GIA</button></div>
+                    <div class="dataset-detail" title="Caron and Ivins 2019 gridded VLM">Caron and Ivins 2019 g...</div>
                   </div>
                   <div class="dataset-actions">
-                    <button class="dataset-info-btn" type="button" data-dataset-info="gia_caron_2020" aria-label="GIA dataset information">
-                      <i class="bi bi-info-circle"></i>
-                    </button>
                     <button class="dataset-download-btn" type="button" data-dataset-download="gia_caron_2020" aria-label="GIA original data download">
                       <i class="bi bi-download"></i>
                     </button>
                     <div class="form-check form-switch m-0">
-                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-gia" checked>
+                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-gia" data-dataset-toggle="gia_caron_2020" checked>
                     </div>
                   </div>
                 </div>
@@ -2896,40 +3440,34 @@ def build_html(
             </h2>
             <div id="group-insar" class="accordion-collapse collapse show" aria-labelledby="heading-insar">
               <div class="accordion-body px-0 py-1">
-                <div class="dataset-row">
+                <div class="dataset-row" data-layer-row="insar_ohenhen_2025">
                   <div class="dataset-icon"><i class="bi bi-bounding-box-circles"></i></div>
                   <div class="flex-grow-1 min-w-0">
-                    <div class="dataset-name">InSAR Deltas</div>
-                    <div class="dataset-detail">Global delta VLM GeoTIFF grids</div>
+                    <div class="dataset-name"><button class="dataset-title-link" type="button" data-dataset-info="insar_ohenhen_2025">InSAR Deltas</button></div>
+                    <div class="dataset-detail" title="Global delta VLM GeoTIFF grids (2014-2023)">Global delta VLM GeoTI...</div>
                   </div>
                   <div class="dataset-actions">
-                    <button class="dataset-info-btn" type="button" data-dataset-info="insar_ohenhen_2025" aria-label="InSAR dataset information">
-                      <i class="bi bi-info-circle"></i>
-                    </button>
                     <button class="dataset-download-btn" type="button" data-dataset-download="insar_ohenhen_2025" aria-label="InSAR original data download">
                       <i class="bi bi-download"></i>
                     </button>
                     <div class="form-check form-switch m-0">
-                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-insar" checked>
+                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-insar" data-dataset-toggle="insar_ohenhen_2025" checked>
                     </div>
                   </div>
                 </div>
 
-                <div class="dataset-row mt-2">
+                <div class="dataset-row mt-2" data-layer-row="insar_gnss_hamling_2022">
                   <div class="dataset-icon"><i class="bi bi-geo-alt"></i></div>
                   <div class="flex-grow-1 min-w-0">
-                    <div class="dataset-name">New Zealand VLM</div>
-                    <div class="dataset-detail">Hamling InSAR + GNSS coastal VLM</div>
+                    <div class="dataset-name"><button class="dataset-title-link" type="button" data-dataset-info="insar_gnss_hamling_2022">New Zealand VLM</button></div>
+                    <div class="dataset-detail" title="Hamling InSAR + GNSS coastal VLM (2003-2011)">Hamling InSAR + GNSS c...</div>
                   </div>
                   <div class="dataset-actions">
-                    <button class="dataset-info-btn" type="button" data-dataset-info="insar_gnss_hamling_2022" aria-label="New Zealand VLM dataset information">
-                      <i class="bi bi-info-circle"></i>
-                    </button>
                     <button class="dataset-download-btn" type="button" data-dataset-download="insar_gnss_hamling_2022" aria-label="New Zealand VLM original data download">
                       <i class="bi bi-download"></i>
                     </button>
                     <div class="form-check form-switch m-0">
-                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-gns" checked>
+                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-gns" data-dataset-toggle="insar_gnss_hamling_2022" checked>
                     </div>
                   </div>
                 </div>
@@ -2945,21 +3483,18 @@ def build_html(
             </h2>
             <div id="group-hybrid-estimates" class="accordion-collapse collapse show" aria-labelledby="heading-hybrid-estimates">
               <div class="accordion-body px-0 py-1">
-                <div class="dataset-row">
+                <div class="dataset-row" data-layer-row="hybrid_oelsmann_2026">
                   <div class="dataset-icon"><i class="bi bi-intersect"></i></div>
                   <div class="flex-grow-1 min-w-0">
-                    <div class="dataset-name">Global coastal VLM</div>
-                    <div class="dataset-detail">Oelsmann hybrid OE24 + GPS + InSAR + GIA</div>
+                    <div class="dataset-name"><button class="dataset-title-link" type="button" data-dataset-info="hybrid_oelsmann_2026">Global coastal VLM</button></div>
+                    <div class="dataset-detail" title="Oelsmann hybrid OE24 + GPS + InSAR + GIA (1995-2020)">Oelsmann hybrid OE24 +...</div>
                   </div>
                   <div class="dataset-actions">
-                    <button class="dataset-info-btn" type="button" data-dataset-info="hybrid_oelsmann_2026" aria-label="Hybrid coastal VLM dataset information">
-                      <i class="bi bi-info-circle"></i>
-                    </button>
                     <button class="dataset-download-btn" type="button" data-dataset-download="hybrid_oelsmann_2026" aria-label="Hybrid coastal VLM original data download">
                       <i class="bi bi-download"></i>
                     </button>
                     <div class="form-check form-switch m-0">
-                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-oelsmann-hybrid" checked>
+                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-oelsmann-hybrid" data-dataset-toggle="hybrid_oelsmann_2026">
                     </div>
                   </div>
                 </div>
@@ -2975,21 +3510,18 @@ def build_html(
             </h2>
             <div id="group-tide-gauge" class="accordion-collapse collapse show" aria-labelledby="heading-tide-gauge">
               <div class="accordion-body px-0 py-1">
-                <div class="dataset-row">
+                <div class="dataset-row" data-layer-row="tide_gauge_dangendorf_2026">
                   <div class="dataset-icon"><i class="bi bi-water"></i></div>
                   <div class="flex-grow-1 min-w-0">
-                    <div class="dataset-name">CSL-TG VLM</div>
-                    <div class="dataset-detail">Dangendorf tide-gauge residual trends</div>
+                    <div class="dataset-name"><button class="dataset-title-link" type="button" data-dataset-info="tide_gauge_dangendorf_2026">CSL-TG VLM</button></div>
+                    <div class="dataset-detail" title="Dangendorf tide-gauge residual trends (1900-2021)">Dangendorf tide-gauge ...</div>
                   </div>
                   <div class="dataset-actions">
-                    <button class="dataset-info-btn" type="button" data-dataset-info="tide_gauge_dangendorf_2026" aria-label="Tide gauge dataset information">
-                      <i class="bi bi-info-circle"></i>
-                    </button>
                     <button class="dataset-download-btn" type="button" data-dataset-download="tide_gauge_dangendorf_2026" aria-label="Tide gauge original data download">
                       <i class="bi bi-download"></i>
                     </button>
                     <div class="form-check form-switch m-0">
-                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-tide-gauge" checked>
+                      <input class="form-check-input" type="checkbox" role="switch" id="toggle-tide-gauge" data-dataset-toggle="tide_gauge_dangendorf_2026" checked>
                     </div>
                   </div>
                 </div>
@@ -3001,16 +3533,13 @@ def build_html(
 
       <section class="panel-section">
         <div class="section-title">External Context</div>
-        <div class="dataset-row">
+        <div class="dataset-row" data-layer-row="ghsl_schiavina_2025">
           <div class="dataset-icon"><i class="bi bi-people"></i></div>
           <div class="flex-grow-1 min-w-0">
-            <div class="dataset-name">Population</div>
-            <div class="dataset-detail">GHSL GHS-WUP-POP 2025 raster</div>
+            <div class="dataset-name"><button class="dataset-title-link" type="button" data-external-info="ghsl_schiavina_2025">Population</button></div>
+            <div class="dataset-detail" title="GHSL GHS-WUP-POP 2025 raster">GHSL GHS-WUP-POP 2025 ...</div>
           </div>
           <div class="dataset-actions">
-            <button class="dataset-info-btn" type="button" data-external-info="ghsl_schiavina_2025" aria-label="Population dataset information">
-              <i class="bi bi-info-circle"></i>
-            </button>
             <button class="dataset-download-btn" type="button" data-external-download="ghsl_schiavina_2025" aria-label="Population original data download">
               <i class="bi bi-download"></i>
             </button>
@@ -3033,13 +3562,7 @@ def build_html(
 
       <section class="panel-section">
         <div class="section-title">Filters</div>
-        <label class="control-label" for="color-scale-slider">
-          <span>Color scale range</span>
-          <span class="control-value">+/- <span id="color-scale-value">0.0</span> mm/yr</span>
-        </label>
-        <input type="range" class="form-range" min="1" max="100" step="0.5" value="8" id="color-scale-slider">
-
-        <label class="control-label mt-3" for="gia-opacity-slider">
+        <label class="control-label" for="gia-opacity-slider">
           <span>GIA opacity</span>
           <span class="control-value"><span id="gia-opacity-value">35</span>%</span>
         </label>
@@ -3133,27 +3656,33 @@ def build_html(
       </div>
     </div>
 
-    <div class="legend" aria-label="VLM color scale legend">
-      <div class="legend-title">Shared VLM color scale (mm/yr)</div>
-      <div class="legend-ramp"></div>
-      <div class="legend-labels">
-        <span id="legend-min">negative</span>
-        <span>0</span>
-        <span id="legend-max">positive</span>
+    <div class="legend vlm-legend" id="vlmLegend" aria-label="VLM color scale legend">
+      <button class="legend-toggle" type="button" id="vlmLegendToggle" aria-label="Toggle VLM color controls" aria-expanded="true">
+        <i class="bi bi-chevron-down"></i>
+      </button>
+      <div class="legend-body">
+        <div class="render-variable-control" role="radiogroup" aria-label="Render variable">
+          <input type="radio" name="render-variable" id="render-variable-trend" value="trend" checked>
+          <label for="render-variable-trend">Trend</label>
+          <input type="radio" name="render-variable" id="render-variable-uncertainty" value="uncertainty">
+          <label for="render-variable-uncertainty">Uncertainty</label>
+        </div>
+        <div class="legend-title" id="legend-title">Shared VLM color scale (mm/yr)</div>
+        <div class="legend-ramp" id="vlm-legend-ramp"></div>
+        <div class="legend-labels">
+          <span id="legend-min">negative</span>
+          <span id="legend-mid">0</span>
+          <span id="legend-max">positive</span>
+        </div>
+        <div class="legend-scale-control">
+          <label class="control-label" for="color-scale-slider">
+            <span id="color-scale-label-text">Trend color range</span>
+            <span class="control-value"><span id="color-scale-prefix">+/-</span> <span id="color-scale-value">0.0</span> mm/yr</span>
+          </label>
+          <input type="range" class="form-range" min="1" max="100" step="0.5" value="5" id="color-scale-slider">
+        </div>
       </div>
     </div>
-  </div>
-
-  <div class="attribution">
-    Basemap: Carto Positron GL via MapLibre<br>
-    Data:
-    <a href="{MIDAS_URL}" target="_blank" rel="noreferrer">NGL MIDAS</a> |
-    <a href="{GIA_URL}" target="_blank" rel="noreferrer">JPL VESL GIA</a> |
-    <a href="{INSAR_URL}" target="_blank" rel="noreferrer">Zenodo InSAR deltas</a> |
-    <a href="{GNS_METADATA_URL}" target="_blank" rel="noreferrer">GNS NZ VLM</a> |
-    <a href="{TIDE_GAUGE_RECORD_URL}" target="_blank" rel="noreferrer">CSL-TG tide gauges</a> |
-    <a href="{OELSMANN_HYBRID_RECORD_URL}" target="_blank" rel="noreferrer">Oelsmann hybrid VLM</a> |
-    <a href="{GHSL_POP_URL}" target="_blank" rel="noreferrer">GHSL population</a>
   </div>
 
   <div class="modal fade metadata-modal" id="datasetInfoModal" tabindex="-1" aria-labelledby="datasetInfoTitle" aria-hidden="true">
@@ -3382,35 +3911,42 @@ def build_html(
       COORDINATE_SYSTEM
     }} = deck;
 
-    const POSITIVE_DATA = {positive_json};
-    const NEGATIVE_DATA = {negative_json};
+    let POSITIVE_DATA = [];
+    let NEGATIVE_DATA = [];
     const METADATA = {metadata_json};
-    const GIA_GRID_VALUES = {gia_values_json};
+    let NGL_IMAGED_GRID_VALUES = null;
+    const NGL_IMAGED_METADATA = {ngl_imaged_metadata_json};
+    let GIA_GRID_VALUES = null;
     const GIA_METADATA = {gia_metadata_json};
-    const INSAR_GRIDS = {insar_grids_json};
+    let INSAR_GRIDS = [];
     const INSAR_METADATA = {insar_metadata_json};
-    const GNS_DATA = {gns_records_json};
+    let GNS_DATA = [];
     const GNS_METADATA = {gns_metadata_json};
-    const TIDE_GAUGE_DATA = {tide_gauge_records_json};
+    let TIDE_GAUGE_DATA = [];
     const TIDE_GAUGE_METADATA = {tide_gauge_metadata_json};
-    const OELSMANN_HYBRID_DATA = {oelsmann_hybrid_records_json};
+    let OELSMANN_HYBRID_DATA = [];
     const OELSMANN_HYBRID_METADATA = {oelsmann_hybrid_metadata_json};
     const DATASET_ATTRIBUTES = {dataset_attributes_json};
     const POPULATION_METADATA = {population_metadata_json};
     const POPULATION_DATA_URL = "{POPULATION_PAYLOAD_JS.as_posix()}";
     const EXTERNAL_DATASET_ATTRIBUTES = {external_dataset_attributes_json};
-    const ALL_DATA = POSITIVE_DATA.concat(NEGATIVE_DATA);
+    const RENDER_PAYLOAD_URLS = {render_urls_json};
+    const UNCERTAINTY_PAYLOAD_URLS = {uncertainty_urls_json};
+    let ALL_DATA = [];
 
     const state = {{
       showGPS: true,
+      showNglImaged: false,
       showGIA: true,
       showInSAR: true,
       showGNS: true,
       showTideGauge: true,
-      showOelsmannHybrid: true,
+      showOelsmannHybrid: false,
       showPopulation: false,
+      renderVariable: "trend",
       renderMode: "points",
-      colorLimit: 8,
+      colorLimit: 5,
+      uncertaintyLimit: 4,
       giaOpacity: 0.35,
       insarOpacity: 0.85,
       populationOpacity: 0.7,
@@ -3425,13 +3961,31 @@ def build_html(
     }};
 
     const SELECTION_DATASETS = [
-      {{id: "gnss", label: "GNSS", color: [36, 105, 180], kind: "point", axis: "left"}},
-      {{id: "gia", label: "GIA", color: [126, 87, 194], kind: "giaGrid", axis: "left"}},
-      {{id: "insar", label: "InSAR deltas", color: [230, 126, 34], kind: "insarGrid", axis: "right"}},
-      {{id: "gns", label: "NZ InSAR + GNSS", color: [34, 150, 94], kind: "point", axis: "right"}},
-      {{id: "hybrid", label: "Hybrid estimates", color: [211, 84, 0], kind: "point", axis: "left"}},
-      {{id: "tideGauge", label: "Tide gauges", color: [143, 86, 59], kind: "point", axis: "left"}}
+      {{id: "gnss", datasetId: "gnss_blewitt_2018", label: "GNSS", color: [36, 105, 180], kind: "point", axis: "left"}},
+      {{id: "gia", datasetId: "gia_caron_2020", label: "GIA", color: [126, 87, 194], kind: "giaGrid", axis: "left"}},
+      {{id: "insar", datasetId: "insar_ohenhen_2025", label: "InSAR deltas", color: [230, 126, 34], kind: "insarGrid", axis: "right"}},
+      {{id: "gns", datasetId: "insar_gnss_hamling_2022", label: "NZ InSAR + GNSS", color: [34, 150, 94], kind: "point", axis: "right"}},
+      {{id: "hybrid", datasetId: "hybrid_oelsmann_2026", label: "Hybrid estimates", color: [211, 84, 0], kind: "point", axis: "left"}},
+      {{id: "tideGauge", datasetId: "tide_gauge_dangendorf_2026", label: "Tide gauges", color: [143, 86, 59], kind: "point", axis: "left"}}
     ];
+    const RENDER_DATASET_IDS = {{
+      gps: "gnss_blewitt_2018",
+      nglImaged: "gnss_imaged_hammond_2021",
+      gia: "gia_caron_2020",
+      insar: "insar_ohenhen_2025",
+      gns: "insar_gnss_hamling_2022",
+      hybrid: "hybrid_oelsmann_2026",
+      tideGauge: "tide_gauge_dangendorf_2026"
+    }};
+    const UNCERTAINTY_DATASET_IDS = new Set(Object.keys(UNCERTAINTY_PAYLOAD_URLS));
+    const uncertaintyState = {{
+      loaded: false,
+      loading: null,
+      payloads: {{}},
+      nglImagedValues: null,
+      giaValues: null,
+      max: 5
+    }};
     const selectionState = {{
       enabled: false,
       center: null,
@@ -3488,6 +4042,191 @@ def build_html(
         lerp(neutral[2], target[2], t),
         alpha
       ];
+    }}
+
+    function colorForUncertainty(value, alpha = 230) {{
+      const safeMax = Math.max(0.5, Number(state.uncertaintyLimit) || 4);
+      const t = Math.max(0, Math.min(1, Number(value) / safeMax));
+      const stops = [
+        [255, 247, 188],
+        [254, 196, 79],
+        [217, 95, 14],
+        [127, 0, 0]
+      ];
+      const scaled = t * (stops.length - 1);
+      const index = Math.min(Math.floor(scaled), stops.length - 2);
+      const k = scaled - index;
+      const a = stops[index];
+      const b = stops[index + 1];
+      return [
+        lerp(a[0], b[0], k),
+        lerp(a[1], b[1], k),
+        lerp(a[2], b[2], k),
+        alpha
+      ];
+    }}
+
+    function renderValue(record) {{
+      return state.renderVariable === "uncertainty" ? Number(record.up_sigma_mm_yr) : Number(record.up_mm_yr);
+    }}
+
+    function colorForRecord(record, alpha = 220) {{
+      const value = renderValue(record);
+      if (!Number.isFinite(value)) return [180, 188, 198, Math.round(alpha * 0.45)];
+      return state.renderVariable === "uncertainty"
+        ? colorForUncertainty(value, alpha)
+        : colorForValue(value, state.colorLimit, alpha);
+    }}
+
+    function datasetHasActiveVariable(datasetId) {{
+      return state.renderVariable !== "uncertainty" || UNCERTAINTY_DATASET_IDS.has(datasetId);
+    }}
+
+    function loadJsonPayload(url) {{
+      return fetch(url, {{cache: "force-cache"}}).then(response => {{
+        if (!response.ok) throw new Error(`Could not load ${{url}}`);
+        return response.json();
+      }});
+    }}
+
+    function hydratePointUncertainty(records, idField, payload) {{
+      if (!payload || !Array.isArray(payload.values)) return;
+      const lookup = new Map(payload.values.map(item => [String(item[0]), Number(item[1])]));
+      for (const record of records) {{
+        const value = lookup.get(String(record[idField]));
+        if (Number.isFinite(value)) record.up_sigma_mm_yr = value;
+      }}
+    }}
+
+    const renderPayloadState = {{
+      payloads: {{}},
+      loading: {{}},
+      errors: {{}}
+    }};
+
+    function setDatasetLoading(datasetId, loading) {{
+      document.querySelectorAll(`[data-layer-row="${{datasetId}}"]`).forEach(row => {{
+        row.classList.toggle("loading", loading);
+        row.setAttribute("aria-busy", loading ? "true" : "false");
+      }});
+    }}
+
+    function hydrateLoadedUncertaintyForDataset(datasetId) {{
+      if (!uncertaintyState.loaded) return;
+      if (datasetId === RENDER_DATASET_IDS.gps) {{
+        hydratePointUncertainty(ALL_DATA, "station", uncertaintyState.payloads.gnss_blewitt_2018);
+      }} else if (datasetId === RENDER_DATASET_IDS.gns) {{
+        hydratePointUncertainty(GNS_DATA, "id", uncertaintyState.payloads.insar_gnss_hamling_2022);
+      }} else if (datasetId === RENDER_DATASET_IDS.hybrid) {{
+        hydratePointUncertainty(OELSMANN_HYBRID_DATA, "id", uncertaintyState.payloads.hybrid_oelsmann_2026);
+      }} else if (datasetId === RENDER_DATASET_IDS.tideGauge) {{
+        hydratePointUncertainty(TIDE_GAUGE_DATA, "id", uncertaintyState.payloads.tide_gauge_dangendorf_2026);
+      }}
+    }}
+
+    function assignRenderPayload(datasetId, payload) {{
+      if (datasetId === RENDER_DATASET_IDS.gps) {{
+        POSITIVE_DATA = Array.isArray(payload.positive) ? payload.positive : [];
+        NEGATIVE_DATA = Array.isArray(payload.negative) ? payload.negative : [];
+        ALL_DATA = POSITIVE_DATA.concat(NEGATIVE_DATA);
+      }} else if (datasetId === RENDER_DATASET_IDS.nglImaged) {{
+        NGL_IMAGED_GRID_VALUES = Array.isArray(payload.values) ? payload.values : null;
+        nglImagedCellCache = null;
+        nglImagedCellCacheVariable = null;
+      }} else if (datasetId === RENDER_DATASET_IDS.gia) {{
+        GIA_GRID_VALUES = Array.isArray(payload.values) ? payload.values : null;
+        giaCellCache = null;
+        giaCellCacheVariable = null;
+        giaBitmapCanvasCache.clear();
+      }} else if (datasetId === RENDER_DATASET_IDS.insar) {{
+        INSAR_GRIDS = Array.isArray(payload.grids) ? payload.grids : [];
+      }} else if (datasetId === RENDER_DATASET_IDS.gns) {{
+        GNS_DATA = Array.isArray(payload.records) ? payload.records : [];
+      }} else if (datasetId === RENDER_DATASET_IDS.hybrid) {{
+        OELSMANN_HYBRID_DATA = Array.isArray(payload.records) ? payload.records : [];
+      }} else if (datasetId === RENDER_DATASET_IDS.tideGauge) {{
+        TIDE_GAUGE_DATA = Array.isArray(payload.records) ? payload.records : [];
+      }}
+      renderPayloadState.payloads[datasetId] = payload;
+      hydrateLoadedUncertaintyForDataset(datasetId);
+    }}
+
+    function loadRenderPayload(datasetId) {{
+      if (renderPayloadState.payloads[datasetId]) return Promise.resolve(renderPayloadState.payloads[datasetId]);
+      if (renderPayloadState.loading[datasetId]) return renderPayloadState.loading[datasetId];
+      const url = RENDER_PAYLOAD_URLS[datasetId];
+      if (!url) return Promise.resolve(null);
+
+      setDatasetLoading(datasetId, true);
+      renderPayloadState.loading[datasetId] = loadJsonPayload(url).then(payload => {{
+        assignRenderPayload(datasetId, payload || {{}});
+        delete renderPayloadState.errors[datasetId];
+        return payload;
+      }}).catch(error => {{
+        renderPayloadState.errors[datasetId] = error;
+        console.warn(error);
+        return null;
+      }}).finally(() => {{
+        delete renderPayloadState.loading[datasetId];
+        setDatasetLoading(datasetId, false);
+        computeSelectionRecords();
+        updateSelectionStatus();
+        updateLayers();
+      }});
+      return renderPayloadState.loading[datasetId];
+    }}
+
+    function loadActiveRenderPayloads() {{
+      const activeDatasetIds = [];
+      if (state.showGPS) activeDatasetIds.push(RENDER_DATASET_IDS.gps);
+      if (state.showNglImaged) activeDatasetIds.push(RENDER_DATASET_IDS.nglImaged);
+      if (state.showGIA) activeDatasetIds.push(RENDER_DATASET_IDS.gia);
+      if (state.showInSAR) activeDatasetIds.push(RENDER_DATASET_IDS.insar);
+      if (state.showGNS) activeDatasetIds.push(RENDER_DATASET_IDS.gns);
+      if (state.showOelsmannHybrid) activeDatasetIds.push(RENDER_DATASET_IDS.hybrid);
+      if (state.showTideGauge) activeDatasetIds.push(RENDER_DATASET_IDS.tideGauge);
+      activeDatasetIds.forEach(datasetId => {{
+        if (datasetHasActiveVariable(datasetId)) loadRenderPayload(datasetId);
+      }});
+      if (state.showPopulation && !makePopulationPointData()) {{
+        loadPopulationDataset().then(() => {{
+          if (state.showPopulation) updateLayers();
+        }});
+      }}
+    }}
+
+    function updateUncertaintyMax() {{
+      const maxValues = Object.values(uncertaintyState.payloads)
+        .map(payload => Number(payload && payload.max))
+        .filter(Number.isFinite);
+      uncertaintyState.max = maxValues.length ? Math.max(0.5, ...maxValues) : 5;
+    }}
+
+    function loadUncertaintyPayloads() {{
+      if (uncertaintyState.loaded) return Promise.resolve(uncertaintyState.payloads);
+      if (uncertaintyState.loading) return uncertaintyState.loading;
+
+      uncertaintyState.loading = Promise.all(Object.entries(UNCERTAINTY_PAYLOAD_URLS).map(([datasetId, url]) =>
+        loadJsonPayload(url).then(payload => [datasetId, payload])
+      )).then(entries => {{
+        uncertaintyState.payloads = Object.fromEntries(entries);
+        hydratePointUncertainty(ALL_DATA, "station", uncertaintyState.payloads.gnss_blewitt_2018);
+        hydratePointUncertainty(GNS_DATA, "id", uncertaintyState.payloads.insar_gnss_hamling_2022);
+        hydratePointUncertainty(OELSMANN_HYBRID_DATA, "id", uncertaintyState.payloads.hybrid_oelsmann_2026);
+        hydratePointUncertainty(TIDE_GAUGE_DATA, "id", uncertaintyState.payloads.tide_gauge_dangendorf_2026);
+        uncertaintyState.nglImagedValues = uncertaintyState.payloads.gnss_imaged_hammond_2021?.values || null;
+        uncertaintyState.giaValues = uncertaintyState.payloads.gia_caron_2020?.values || null;
+        updateUncertaintyMax();
+        uncertaintyState.loaded = true;
+        uncertaintyState.loading = null;
+        return uncertaintyState.payloads;
+      }}).catch(error => {{
+        uncertaintyState.loading = null;
+        console.warn(error);
+        return uncertaintyState.payloads;
+      }});
+
+      return uncertaintyState.loading;
     }}
 
     function colorForPopulation(value, alpha) {{
@@ -3547,6 +4286,7 @@ def build_html(
       if (makePopulationPointData()) return Promise.resolve(populationPointCache);
       if (populationLoadPromise) return populationLoadPromise;
 
+      setDatasetLoading("ghsl_schiavina_2025", true);
       populationLoadPromise = new Promise((resolve, reject) => {{
         const script = document.createElement("script");
         script.src = POPULATION_DATA_URL;
@@ -3562,6 +4302,8 @@ def build_html(
         populationLoadPromise = null;
         console.warn(error);
         return null;
+      }}).finally(() => {{
+        setDatasetLoading("ghsl_schiavina_2025", false);
       }});
 
       return populationLoadPromise;
@@ -3606,14 +4348,15 @@ def build_html(
     function selectedPointRecords(datasetId, datasetLabel, color, data) {{
       const output = [];
       for (const record of data) {{
-        if (!Number.isFinite(Number(record.up_mm_yr))) continue;
+        const value = renderValue(record);
+        if (!Number.isFinite(value)) continue;
         if (!pointWithinSelection(record.longitude, record.latitude)) continue;
         output.push(selectionRecord(
           datasetId,
           datasetLabel,
           color,
           record,
-          record.up_mm_yr,
+          value,
           record.up_sigma_mm_yr,
           record.longitude,
           record.latitude
@@ -3626,10 +4369,12 @@ def build_html(
       const output = [];
       const width = GIA_METADATA.width;
       const height = GIA_METADATA.height;
+      const values = state.renderVariable === "uncertainty" ? uncertaintyState.giaValues : GIA_GRID_VALUES;
+      if (!values) return output;
       for (let y = 0; y < height; y += 1) {{
         const latitude = 90 - y - 0.5;
         for (let x = 0; x < width; x += 1) {{
-          const value = GIA_GRID_VALUES[y * width + x];
+          const value = values[y * width + x];
           if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
           const longitude = -180 + x + 0.5;
           if (!pointWithinSelection(longitude, latitude)) continue;
@@ -3641,6 +4386,7 @@ def build_html(
 
     function selectedInSARRecords(datasetId, datasetLabel, color) {{
       const output = [];
+      if (state.renderVariable === "uncertainty") return output;
       for (const grid of INSAR_GRIDS) {{
         const [west, south, east, north] = grid.bounds;
         const lonStep = (east - west) / grid.width;
@@ -3667,12 +4413,12 @@ def build_html(
 
       const gnssData = POSITIVE_DATA.concat(NEGATIVE_DATA).filter(stationMatches);
       const records = [
-        ...selectedPointRecords("gnss", "GNSS", SELECTION_DATASETS[0].color, gnssData),
-        ...selectedGIARecords("gia", "GIA", SELECTION_DATASETS[1].color),
-        ...selectedInSARRecords("insar", "InSAR deltas", SELECTION_DATASETS[2].color),
-        ...selectedPointRecords("gns", "NZ InSAR + GNSS", SELECTION_DATASETS[3].color, GNS_DATA),
-        ...selectedPointRecords("hybrid", "Hybrid estimates", SELECTION_DATASETS[4].color, OELSMANN_HYBRID_DATA),
-        ...selectedPointRecords("tideGauge", "Tide gauges", SELECTION_DATASETS[5].color, TIDE_GAUGE_DATA)
+        ...(datasetHasActiveVariable(RENDER_DATASET_IDS.gps) ? selectedPointRecords("gnss", "GNSS", SELECTION_DATASETS[0].color, gnssData) : []),
+        ...(datasetHasActiveVariable(RENDER_DATASET_IDS.gia) ? selectedGIARecords("gia", "GIA", SELECTION_DATASETS[1].color) : []),
+        ...(datasetHasActiveVariable(RENDER_DATASET_IDS.insar) ? selectedInSARRecords("insar", "InSAR deltas", SELECTION_DATASETS[2].color) : []),
+        ...(datasetHasActiveVariable(RENDER_DATASET_IDS.gns) ? selectedPointRecords("gns", "NZ InSAR + GNSS", SELECTION_DATASETS[3].color, GNS_DATA) : []),
+        ...(datasetHasActiveVariable(RENDER_DATASET_IDS.hybrid) ? selectedPointRecords("hybrid", "Hybrid estimates", SELECTION_DATASETS[4].color, OELSMANN_HYBRID_DATA) : []),
+        ...(datasetHasActiveVariable(RENDER_DATASET_IDS.tideGauge) ? selectedPointRecords("tideGauge", "Tide gauges", SELECTION_DATASETS[5].color, TIDE_GAUGE_DATA) : [])
       ];
 
       selectionState.records = records;
@@ -3741,8 +4487,9 @@ def build_html(
       ctx.clearRect(0, 0, width, height);
 
       const activeRecords = selectionState.records.filter(record => selectionState.visibleDatasets[record.datasetId]);
+      const variableLabel = state.renderVariable === "uncertainty" ? "uncertainties" : "trends";
       document.getElementById("selectionHistogramSubtitle").textContent = selectionState.center
-        ? `${{activeRecords.length.toLocaleString()}} active of ${{selectionState.records.length.toLocaleString()}} selected trends | radius ${{selectionState.radiusKm}} km`
+        ? `${{activeRecords.length.toLocaleString()}} active of ${{selectionState.records.length.toLocaleString()}} selected ${{variableLabel}} | radius ${{selectionState.radiusKm}} km`
         : "No selection yet";
       if (!activeRecords.length) {{
         ctx.fillStyle = "#64748b";
@@ -3934,16 +4681,111 @@ def build_html(
       }});
     }}
 
-    const GIA_TILE_DEGREES = 10;
+    let giaPointCache = null;
 
-    function makeGIACanvas(xStart, yStart, xCount, yCount) {{
+    function makeGIAPointData() {{
+      if (giaPointCache) return giaPointCache;
+
+      const points = [];
+      const width = GIA_METADATA.width;
+      const height = GIA_METADATA.height;
+      for (let y = 0; y < height; y += 1) {{
+        const latitude = 90 - y - 0.5;
+        for (let x = 0; x < width; x += 1) {{
+          const value = GIA_GRID_VALUES[y * width + x];
+          if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
+          points.push({{
+            longitude: -180 + x + 0.5,
+            latitude,
+            up_mm_yr: value
+          }});
+        }}
+      }}
+
+      giaPointCache = points;
+      return giaPointCache;
+    }}
+
+    let giaCellCache = null;
+    let giaCellCacheVariable = null;
+    let nglImagedCellCache = null;
+    let nglImagedCellCacheVariable = null;
+
+    function makeGridCellData(metadata, values, variable) {{
+      const cells = [];
+      if (!values) return cells;
+      const width = metadata.width;
+      const height = metadata.height;
+      const bounds = metadata.bounds;
+      const lonStep = (bounds[2] - bounds[0]) / width;
+      const latStep = (bounds[3] - bounds[1]) / height;
+      for (let y = 0; y < height; y += 1) {{
+        const south = Math.max(-89.999, bounds[1] + y * latStep);
+        const north = Math.min(89.999, south + latStep);
+        for (let x = 0; x < width; x += 1) {{
+          const value = values[y * width + x];
+          if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
+          const west = bounds[0] + x * lonStep;
+          const east = west + lonStep;
+          cells.push({{
+            up_mm_yr: variable === "uncertainty" ? null : value,
+            up_sigma_mm_yr: variable === "uncertainty" ? value : null,
+            polygon: [[west, south], [east, south], [east, north], [west, north]]
+          }});
+        }}
+      }}
+      return cells;
+    }}
+
+    function makeGIACellData() {{
+      if (giaCellCache && giaCellCacheVariable === state.renderVariable) return giaCellCache;
+
+      const cells = [];
+      const width = GIA_METADATA.width;
+      const height = GIA_METADATA.height;
+      const values = state.renderVariable === "uncertainty" ? uncertaintyState.giaValues : GIA_GRID_VALUES;
+      if (!values) return cells;
+      for (let y = 0; y < height; y += 1) {{
+        const north = Math.min(89.999, 90 - y);
+        const south = Math.max(-89.999, 90 - y - 1);
+        for (let x = 0; x < width; x += 1) {{
+          const value = values[y * width + x];
+          if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
+          const west = -180 + x;
+          const east = west + 1;
+          cells.push({{
+            up_mm_yr: state.renderVariable === "uncertainty" ? null : value,
+            up_sigma_mm_yr: state.renderVariable === "uncertainty" ? value : null,
+            polygon: [[west, south], [east, south], [east, north], [west, north]]
+          }});
+        }}
+      }}
+
+      giaCellCache = cells;
+      giaCellCacheVariable = state.renderVariable;
+      return giaCellCache;
+    }}
+
+    function makeNglImagedCellData() {{
+      if (nglImagedCellCache && nglImagedCellCacheVariable === state.renderVariable) return nglImagedCellCache;
+      const values = state.renderVariable === "uncertainty" ? uncertaintyState.nglImagedValues : NGL_IMAGED_GRID_VALUES;
+      nglImagedCellCache = makeGridCellData(NGL_IMAGED_METADATA, values, state.renderVariable);
+      nglImagedCellCacheVariable = state.renderVariable;
+      return nglImagedCellCache;
+    }}
+
+    const giaBitmapCanvasCache = new Map();
+
+    function makeGIABitmapCanvas(xStart, yStart, xCount, yCount, alpha, colorLimit) {{
+      const cacheKey = `${{xStart}}:${{yStart}}:${{xCount}}:${{yCount}}:${{alpha}}:${{colorLimit}}`;
+      if (giaBitmapCanvasCache.has(cacheKey)) return giaBitmapCanvasCache.get(cacheKey);
+
       const canvas = document.createElement("canvas");
       canvas.width = xCount;
       canvas.height = yCount;
 
       const context = canvas.getContext("2d");
       const image = context.createImageData(canvas.width, canvas.height);
-      const alpha = Math.round(255 * state.giaOpacity);
 
       for (let y = 0; y < yCount; y += 1) {{
         for (let x = 0; x < xCount; x += 1) {{
@@ -3954,7 +4796,7 @@ def build_html(
             continue;
           }}
 
-          const color = colorForValue(value, state.colorLimit, alpha);
+          const color = colorForValue(value, colorLimit, alpha);
           image.data[offset] = color[0];
           image.data[offset + 1] = color[1];
           image.data[offset + 2] = color[2];
@@ -3963,42 +4805,101 @@ def build_html(
       }}
 
       context.putImageData(image, 0, 0);
+      giaBitmapCanvasCache.set(cacheKey, canvas);
       return canvas;
     }}
 
     function makeGIALayers() {{
       if (!state.showGIA) return [];
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.gia)) return [];
 
-      const commonProps = {{
-        _imageCoordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+      if (false) {{
+        return [
+          new ScatterplotLayer({{
+            id: "gia-vlm-grid",
+            data: makeGIAPointData(),
+            getPosition: d => [d.longitude, d.latitude, 900],
+            getRadius: 72000,
+            radiusUnits: "meters",
+            radiusMinPixels: 1,
+            radiusMaxPixels: 8,
+            stroked: false,
+            filled: true,
+            getFillColor: d => colorForRecord(d, Math.round(255 * state.giaOpacity)),
+            pickable: false,
+            parameters: {{
+              depthTest: false,
+              depthMask: false
+            }},
+            updateTriggers: {{
+              getFillColor: [state.colorLimit, state.uncertaintyLimit, state.giaOpacity, state.renderVariable]
+            }}
+          }})
+        ];
+      }}
+
+      if (false) {{
+        const alpha = Math.round(255 * state.giaOpacity);
+        const layers = [];
+        for (let band = 0; band < 20; band += 1) {{
+          const yStart = band + 1;
+          const north = 89 - band;
+          const south = north - 1;
+          layers.push(new BitmapLayer({{
+            id: `gia-vlm-bitmap-ring-test-${{band}}`,
+            image: makeGIABitmapCanvas(0, yStart, GIA_METADATA.width, 1, alpha, state.colorLimit),
+            bounds: [-180, south, 180, north],
+            _imageCoordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+            pickable: false,
+            parameters: {{
+              depthTest: false,
+              depthMask: false
+            }}
+          }}));
+        }}
+        return layers;
+      }}
+
+      return [
+        new PolygonLayer({{
+          id: "gia-vlm-cell-mesh",
+          data: makeGIACellData(),
+          getPolygon: d => d.polygon,
+          getFillColor: d => colorForRecord(d, Math.round(255 * state.giaOpacity)),
+          stroked: false,
+          filled: true,
+          pickable: false,
+          parameters: {{
+            depthTest: false,
+            depthMask: false
+          }},
+          updateTriggers: {{
+            getFillColor: [state.colorLimit, state.uncertaintyLimit, state.giaOpacity, state.renderVariable]
+          }}
+        }})
+      ];
+    }}
+
+    function makeNglImagedLayer() {{
+      if (!state.showNglImaged) return null;
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.nglImaged)) return null;
+
+      return new PolygonLayer({{
+        id: "ngl-gps-imaging-vlm-grid",
+        data: makeNglImagedCellData(),
+        getPolygon: d => d.polygon,
+        getFillColor: d => colorForRecord(d, 215),
+        stroked: false,
+        filled: true,
         pickable: false,
         parameters: {{
           depthTest: false,
           depthMask: false
+        }},
+        updateTriggers: {{
+          getFillColor: [state.colorLimit, state.uncertaintyLimit, state.renderVariable]
         }}
-      }};
-
-      const layers = [];
-      for (let yStart = 0; yStart < GIA_METADATA.height; yStart += GIA_TILE_DEGREES) {{
-        const yCount = Math.min(GIA_TILE_DEGREES, GIA_METADATA.height - yStart);
-        const north = 90 - yStart;
-        const south = 90 - (yStart + yCount);
-
-        for (let xStart = 0; xStart < GIA_METADATA.width; xStart += GIA_TILE_DEGREES) {{
-          const xCount = Math.min(GIA_TILE_DEGREES, GIA_METADATA.width - xStart);
-          const west = -180 + xStart;
-          const east = -180 + xStart + xCount;
-
-          layers.push(new BitmapLayer({{
-            ...commonProps,
-            id: `gia-vlm-raster-${{xStart}}-${{yStart}}`,
-            image: makeGIACanvas(xStart, yStart, xCount, yCount),
-            bounds: [west, south, east, north]
-          }}));
-        }}
-      }}
-
-      return layers;
+      }});
     }}
 
     function makeGridCanvas(grid, opacity) {{
@@ -4031,6 +4932,7 @@ def build_html(
 
     function makeInSARLayers() {{
       if (!state.showInSAR) return [];
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.insar)) return [];
 
       const rasterLayers = INSAR_GRIDS.map(grid => new BitmapLayer({{
         id: `insar-vlm-${{grid.id}}`,
@@ -4081,6 +4983,7 @@ def build_html(
 
     function makeGNSLayer() {{
       if (!state.showGNS) return null;
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.gns)) return null;
 
       return new ScatterplotLayer({{
         id: "gns-hamling-coastal-vlm",
@@ -4094,7 +4997,7 @@ def build_html(
         filled: true,
         lineWidthMinPixels: 0.7,
         getLineColor: [255, 255, 255, 190],
-        getFillColor: d => colorForValue(d.up_mm_yr, state.colorLimit, 255),
+        getFillColor: d => colorForRecord(d, 255),
         pickable: true,
         autoHighlight: true,
         highlightColor: [255, 255, 255, 170],
@@ -4104,13 +5007,14 @@ def build_html(
         }},
         updateTriggers: {{
           getRadius: [state.markerScale],
-          getFillColor: [state.colorLimit]
+          getFillColor: [state.colorLimit, state.uncertaintyLimit, state.renderVariable]
         }}
       }});
     }}
 
     function makeOelsmannHybridLayer() {{
       if (!state.showOelsmannHybrid) return null;
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.hybrid)) return null;
 
       return new ScatterplotLayer({{
         id: "oelsmann-hybrid-coastal-vlm",
@@ -4124,7 +5028,7 @@ def build_html(
         filled: true,
         lineWidthMinPixels: 0.8,
         getLineColor: [80, 80, 80, 210],
-        getFillColor: d => colorForValue(d.up_mm_yr, state.colorLimit, 255),
+        getFillColor: d => colorForRecord(d, 255),
         pickable: true,
         autoHighlight: true,
         highlightColor: [255, 255, 255, 180],
@@ -4134,13 +5038,14 @@ def build_html(
         }},
         updateTriggers: {{
           getRadius: [state.markerScale],
-          getFillColor: [state.colorLimit]
+          getFillColor: [state.colorLimit, state.uncertaintyLimit, state.renderVariable]
         }}
       }});
     }}
 
     function makeTideGaugeLayer() {{
       if (!state.showTideGauge) return null;
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.tideGauge)) return null;
 
       return new ColumnLayer({{
         id: "tide-gauge-dangendorf-vlm",
@@ -4155,7 +5060,7 @@ def build_html(
         filled: true,
         lineWidthMinPixels: 1,
         getLineColor: [28, 38, 52, 210],
-        getFillColor: d => colorForValue(d.up_mm_yr, state.colorLimit, 255),
+        getFillColor: d => colorForRecord(d, 255),
         pickable: true,
         autoHighlight: true,
         highlightColor: [255, 255, 255, 190],
@@ -4165,7 +5070,7 @@ def build_html(
         }},
         updateTriggers: {{
           radius: [state.tideGaugeScale],
-          getFillColor: [state.colorLimit]
+          getFillColor: [state.colorLimit, state.uncertaintyLimit, state.renderVariable]
         }}
       }});
     }}
@@ -4180,11 +5085,13 @@ def build_html(
 
     function filteredPositiveData() {{
       if (!state.showGPS) return [];
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.gps)) return [];
       return POSITIVE_DATA.filter(stationMatches);
     }}
 
     function filteredNegativeData() {{
       if (!state.showGPS) return [];
+      if (!datasetHasActiveVariable(RENDER_DATASET_IDS.gps)) return [];
       return NEGATIVE_DATA.filter(stationMatches);
     }}
 
@@ -4197,14 +5104,14 @@ def build_html(
         radius: Math.round(18000 * state.markerScale),
         elevationScale: 1,
         diskResolution: 8,
-        getFillColor: d => colorForUp(d.up_mm_yr),
+        getFillColor: d => colorForRecord(d, 220),
         pickable: true,
         autoHighlight: true,
         highlightColor: [255, 255, 255, 170],
         updateTriggers: {{
           getPosition: [state.minDuration, state.minFirstEpoch, state.maxLastEpoch, state.search],
           getElevation: [state.minDuration, state.minFirstEpoch, state.maxLastEpoch, state.search],
-          getFillColor: [state.colorLimit],
+          getFillColor: [state.colorLimit, state.uncertaintyLimit, state.renderVariable],
           radius: [state.markerScale]
         }}
       }});
@@ -4223,7 +5130,7 @@ def build_html(
         filled: true,
         lineWidthMinPixels: 1,
         getLineColor: [120, 130, 142, 220],
-        getFillColor: d => colorForUp(d.up_mm_yr),
+        getFillColor: d => colorForRecord(d, 220),
         pickable: true,
         autoHighlight: true,
         highlightColor: [255, 255, 255, 170],
@@ -4234,7 +5141,7 @@ def build_html(
         updateTriggers: {{
           getPosition: [state.gpsAltitudeOffset],
           getRadius: [state.minDuration, state.minFirstEpoch, state.maxLastEpoch, state.search, state.markerScale],
-          getFillColor: [state.colorLimit]
+          getFillColor: [state.colorLimit, state.uncertaintyLimit, state.renderVariable]
         }}
       }});
     }}
@@ -4258,6 +5165,7 @@ def build_html(
       const negativeData = filteredNegativeData();
       return [
         ...makeGIALayers(),
+        makeNglImagedLayer(),
         ...makeInSARLayers(),
         makePopulationLayer(),
         makeGNSLayer(),
@@ -4349,8 +5257,6 @@ def build_html(
           <div><b>UP uncertainty:</b> ${{formatNumber(object.up_sigma_mm_yr, 2)}} mm/yr</div>
           <div><b>Latitude:</b> ${{formatNumber(object.latitude, 5)}}</div>
           <div><b>Longitude:</b> ${{formatNumber(object.longitude, 5)}}</div>
-          <div><b>Height:</b> ${{formatNumber(object.height_m, 1)}} m</div>
-          <div><b>Steps:</b> ${{object.steps ?? "N/A"}}</div>
         `,
         style: {{
           backgroundColor: "rgba(255,255,255,0.97)",
@@ -5565,10 +6471,39 @@ def build_html(
       }});
     }}
 
+    function syncRenderVariableControls() {{
+      const uncertaintyMode = state.renderVariable === "uncertainty";
+      const colorSlider = document.getElementById("color-scale-slider");
+      const activeRange = uncertaintyMode ? state.uncertaintyLimit : state.colorLimit;
+      colorSlider.min = uncertaintyMode ? "0.5" : "1";
+      colorSlider.max = uncertaintyMode ? "20" : "100";
+      colorSlider.step = "0.5";
+      colorSlider.value = activeRange;
+      document.getElementById("color-scale-label-text").textContent = uncertaintyMode ? "Uncertainty color range" : "Trend color range";
+      document.getElementById("color-scale-prefix").textContent = uncertaintyMode ? "0-" : "+/-";
+      document.querySelectorAll("[data-layer-row]").forEach(row => {{
+        const datasetId = row.getAttribute("data-layer-row");
+        const available = datasetHasActiveVariable(datasetId);
+        row.classList.toggle("unavailable", !available);
+        const toggle = row.querySelector("[data-dataset-toggle]");
+        if (toggle) {{
+          toggle.disabled = !available;
+          toggle.title = available ? "" : "No uncertainty payload available";
+        }}
+      }});
+      document.getElementById("legend-title").textContent = uncertaintyMode
+        ? "Shared uncertainty color scale (mm/yr)"
+        : "Shared VLM color scale (mm/yr)";
+      document.getElementById("vlm-legend-ramp").classList.toggle("uncertainty-ramp", uncertaintyMode);
+      document.getElementById("legend-mid").textContent = uncertaintyMode ? "" : "0";
+    }}
+
     function updateStats(positiveData, negativeData) {{
       const positiveShown = positiveData.length;
       const negativeShown = negativeData.length;
       const colorScaleLabel = state.colorLimit.toFixed(1);
+      const uncertaintyScaleLabel = state.uncertaintyLimit.toFixed(1);
+      const activeColorScaleLabel = state.renderVariable === "uncertainty" ? uncertaintyScaleLabel : colorScaleLabel;
       const durationLabel = state.minDuration.toFixed(1);
       const firstEpochLabel = state.minFirstEpoch.toFixed(1);
       const lastEpochLabel = state.maxLastEpoch.toFixed(1);
@@ -5578,11 +6513,11 @@ def build_html(
       document.getElementById("stat-positive").textContent = positiveShown.toLocaleString();
       document.getElementById("stat-negative").textContent = negativeShown.toLocaleString();
       document.getElementById("stat-mode").textContent = modeLabel;
-      document.getElementById("stat-color-scale").textContent = colorScaleLabel;
+      document.getElementById("stat-color-scale").textContent = activeColorScaleLabel;
       document.getElementById("stat-duration").textContent = durationLabel;
       document.getElementById("stat-first-epoch").textContent = firstEpochLabel;
       document.getElementById("stat-last-epoch").textContent = lastEpochLabel;
-      document.getElementById("color-scale-value").textContent = colorScaleLabel;
+      document.getElementById("color-scale-value").textContent = activeColorScaleLabel;
       document.getElementById("gia-opacity-value").textContent = Math.round(state.giaOpacity * 100).toString();
       document.getElementById("insar-opacity-value").textContent = Math.round(state.insarOpacity * 100).toString();
       document.getElementById("population-opacity-value").textContent = Math.round(state.populationOpacity * 100).toString();
@@ -5590,10 +6525,16 @@ def build_html(
       document.getElementById("first-epoch-value").textContent = firstEpochLabel;
       document.getElementById("last-epoch-value").textContent = lastEpochLabel;
       document.getElementById("search-state").textContent = state.search ? state.search.toUpperCase() : "All";
+      const variableLabel = state.renderVariable === "uncertainty" ? "Uncertainty" : modeLabel;
       document.getElementById("navbar-summary").textContent =
-        `${{(positiveShown + negativeShown).toLocaleString()}} shown - ${{modeLabel}} - color +/- ${{colorScaleLabel}} mm/yr`;
-      document.getElementById("legend-min").textContent = `-${{colorScaleLabel}}`;
-      document.getElementById("legend-max").textContent = `+${{colorScaleLabel}}`;
+        `${{(positiveShown + negativeShown).toLocaleString()}} shown - ${{variableLabel}} - color ${{state.renderVariable === "uncertainty" ? `0-${{uncertaintyScaleLabel}}` : `+/- ${{colorScaleLabel}}`}} mm/yr`;
+      if (state.renderVariable === "uncertainty") {{
+        document.getElementById("legend-min").textContent = "0";
+        document.getElementById("legend-max").textContent = uncertaintyScaleLabel;
+      }} else {{
+        document.getElementById("legend-min").textContent = `-${{colorScaleLabel}}`;
+        document.getElementById("legend-max").textContent = `+${{colorScaleLabel}}`;
+      }}
       document.getElementById("populationLegend").hidden = !state.showPopulation;
       document.getElementById("population-legend-min").textContent = formatNumber(POPULATION_METADATA.min_population, 0);
       document.getElementById("population-legend-mid").textContent = `p95 ${{formatNumber(POPULATION_METADATA.p95_population, 0)}}`;
@@ -5603,15 +6544,13 @@ def build_html(
     function updateLayers() {{
       const positiveData = filteredPositiveData();
       const negativeData = filteredNegativeData();
-      if (state.showPopulation && !makePopulationPointData()) {{
-        loadPopulationDataset().then(() => {{
-          if (state.showPopulation) updateLayers();
-        }});
-      }}
+      syncRenderVariableControls();
+      loadActiveRenderPayloads();
       if (deckgl) {{
         deckgl.setProps({{
           layers: [
           ...makeGIALayers(),
+          makeNglImagedLayer(),
           ...makeInSARLayers(),
           makePopulationLayer(),
           makeGNSLayer(),
@@ -5628,6 +6567,27 @@ def build_html(
     function setMode(mode) {{
       state.renderMode = mode;
       updateLayers();
+    }}
+
+    function setRenderVariable(variable) {{
+      state.renderVariable = variable;
+      if (variable === "uncertainty") {{
+        loadUncertaintyPayloads().then(() => {{
+          computeSelectionRecords();
+          updateLayers();
+          if (document.getElementById("selectionHistogramModal").classList.contains("show")) {{
+            renderSelectionDatasetToggles();
+            drawSelectionHistogram();
+          }}
+        }});
+      }} else {{
+        computeSelectionRecords();
+        updateLayers();
+        if (document.getElementById("selectionHistogramModal").classList.contains("show")) {{
+          renderSelectionDatasetToggles();
+          drawSelectionHistogram();
+        }}
+      }}
     }}
 
     function syncSelectionToolControl() {{
@@ -5697,6 +6657,11 @@ def build_html(
       updateLayers();
     }});
 
+    document.getElementById("toggle-ngl-imaged").addEventListener("change", event => {{
+      state.showNglImaged = event.target.checked;
+      updateLayers();
+    }});
+
     document.getElementById("toggle-gia").addEventListener("change", event => {{
       state.showGIA = event.target.checked;
       updateLayers();
@@ -5730,16 +6695,65 @@ def build_html(
       updateLayers();
     }});
 
+    document.getElementById("showcaseDisclaimerClose").addEventListener("click", () => {{
+      document.getElementById("showcaseDisclaimer").hidden = true;
+    }});
+
+    function collapseTechniqueGroupsOnSmallScreens() {{
+      if (!window.matchMedia("(max-width: 640px)").matches || !window.bootstrap) return;
+      document.querySelectorAll("#techniqueLayerGroups .accordion-collapse.show").forEach(element => {{
+        bootstrap.Collapse.getOrCreateInstance(element, {{toggle: false}}).hide();
+      }});
+    }}
+    collapseTechniqueGroupsOnSmallScreens();
+
+    function syncLayerPanelResponsiveState() {{
+      if (!window.bootstrap) return;
+      const panel = document.getElementById("layerPanel");
+      const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(panel, {{backdrop: false, scroll: true}});
+      if (window.matchMedia("(max-width: 640px)").matches) {{
+        offcanvas.hide();
+      }} else {{
+        offcanvas.show();
+      }}
+    }}
+    syncLayerPanelResponsiveState();
+
+    const vlmLegend = document.getElementById("vlmLegend");
+    const vlmLegendToggle = document.getElementById("vlmLegendToggle");
+    function setVlmLegendCollapsed(collapsed) {{
+      vlmLegend.classList.toggle("collapsed", collapsed);
+      vlmLegendToggle.setAttribute("aria-expanded", String(!collapsed));
+      const icon = vlmLegendToggle.querySelector("i");
+      icon.className = collapsed ? "bi bi-palette-fill" : "bi bi-chevron-down";
+    }}
+    if (vlmLegend && vlmLegendToggle) {{
+      setVlmLegendCollapsed(window.matchMedia("(max-width: 640px)").matches);
+      vlmLegendToggle.addEventListener("click", () => {{
+        setVlmLegendCollapsed(!vlmLegend.classList.contains("collapsed"));
+      }});
+    }}
+
     document.querySelectorAll("input[name='render-mode']").forEach(input => {{
       input.addEventListener("change", event => {{
         if (event.target.checked) setMode(event.target.value);
       }});
     }});
 
+    document.querySelectorAll("input[name='render-variable']").forEach(input => {{
+      input.addEventListener("change", event => {{
+        if (event.target.checked) setRenderVariable(event.target.value);
+      }});
+    }});
+
     const colorScaleSlider = document.getElementById("color-scale-slider");
     colorScaleSlider.value = state.colorLimit;
     colorScaleSlider.addEventListener("input", event => {{
-      state.colorLimit = Number(event.target.value);
+      if (state.renderVariable === "uncertainty") {{
+        state.uncertaintyLimit = Number(event.target.value);
+      }} else {{
+        state.colorLimit = Number(event.target.value);
+      }}
       updateLayers();
     }});
 
@@ -5896,6 +6910,9 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
     .brand-title a {
       color: inherit;
       text-decoration: none;
+    }
+    .brand-short {
+      display: none;
     }
     .nav-link {
       display: inline-flex;
@@ -6111,6 +7128,32 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
     }
 
     @media (max-width: 760px) {
+      html {
+        font-size: 13px;
+      }
+
+      .brand-long {
+        display: none;
+      }
+
+      .brand-short {
+        display: inline;
+      }
+
+      .app-navbar {
+        padding-left: 9px !important;
+        padding-right: 9px !important;
+      }
+
+      .nav-link {
+        padding-left: 8px;
+        padding-right: 8px;
+      }
+
+      .nav-link span {
+        display: none !important;
+      }
+
       main {
         padding-top: 118px;
       }
@@ -6137,7 +7180,7 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html">Global Vertical Land Motion</a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
       <a class="nav-link ms-3" href="index.html">
         <i class="bi bi-globe-americas"></i>
         <span class="d-none d-sm-inline">Map</span>
@@ -7006,6 +8049,12 @@ def build_about_html() -> str:
       .arrow-label { top: 10px; }
     }
     @media (max-width: 640px) {
+      html { font-size: 13px; }
+      .brand-long { display: none; }
+      .brand-short { display: inline; }
+      .app-navbar { padding-left: 9px !important; padding-right: 9px !important; }
+      .app-navbar .nav-link { padding-left: 8px; padding-right: 8px; }
+      .app-navbar .nav-link span { display: none !important; }
       .logo-chip { min-width: unset; width: 100%; }
     }
   </style>
@@ -7013,7 +8062,7 @@ def build_about_html() -> str:
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html">Global Vertical Land Motion</a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
       <a class="nav-link ms-3" href="index.html"><i class="bi bi-globe-americas"></i><span class="d-none d-sm-inline">Map</span></a>
       <a class="nav-link ms-3" href="catalogue.html"><i class="bi bi-table"></i><span class="d-none d-sm-inline">Catalogue</span></a>
       <a class="nav-link ms-3" href="compare.html"><i class="bi bi-columns-gap"></i><span class="d-none d-sm-inline">Compare</span></a>
@@ -7277,6 +8326,8 @@ def build_about_html() -> str:
 def build_compare_html(
     records: list[dict],
     metadata: dict,
+    ngl_imaged_values: list[float | None],
+    ngl_imaged_metadata: dict,
     gia_values: list[list[float]],
     gia_metadata: dict,
     insar_grids: list[dict],
@@ -7288,24 +8339,23 @@ def build_compare_html(
     oelsmann_hybrid_records: list[dict],
     oelsmann_hybrid_metadata: dict,
     population_metadata: dict,
+    render_urls: dict[str, str],
+    uncertainty_urls: dict[str, str],
 ) -> str:
-    positive_records, negative_records = split_records(records)
     replacements = {
-        "__POSITIVE_JSON__": html_escape_json(positive_records),
-        "__NEGATIVE_JSON__": html_escape_json(negative_records),
         "__METADATA_JSON__": html_escape_json(metadata),
-        "__GIA_VALUES_JSON__": html_escape_json(gia_values),
+        "__NGL_IMAGED_METADATA_JSON__": html_escape_json(
+            {key: value for key, value in ngl_imaged_metadata.items() if key != "zeta_values"}
+        ),
         "__GIA_METADATA_JSON__": html_escape_json(gia_metadata),
-        "__INSAR_GRIDS_JSON__": html_escape_json(insar_grids),
         "__INSAR_METADATA_JSON__": html_escape_json(insar_metadata),
-        "__GNS_RECORDS_JSON__": html_escape_json(gns_records),
         "__GNS_METADATA_JSON__": html_escape_json(gns_metadata),
-        "__TIDE_GAUGE_RECORDS_JSON__": html_escape_json(tide_gauge_records),
         "__TIDE_GAUGE_METADATA_JSON__": html_escape_json(tide_gauge_metadata),
-        "__OELSMANN_HYBRID_RECORDS_JSON__": html_escape_json(oelsmann_hybrid_records),
         "__OELSMANN_HYBRID_METADATA_JSON__": html_escape_json(oelsmann_hybrid_metadata),
         "__POPULATION_METADATA_JSON__": html_escape_json(population_metadata),
         "__POPULATION_DATA_URL__": POPULATION_PAYLOAD_JS.as_posix(),
+        "__RENDER_URLS_JSON__": html_escape_json(render_urls),
+        "__UNCERTAINTY_URLS_JSON__": html_escape_json(uncertainty_urls),
     }
     html = r"""<!DOCTYPE html>
 <html lang="en">
@@ -7361,6 +8411,9 @@ def build_compare_html(
       grid-template-columns: 1fr 1fr;
       gap: 1px;
       background: #26313b;
+    }
+    body.compare-bottom-collapsed {
+      --bottom-height: 0px;
     }
     .compare-pane {
       position: relative;
@@ -7447,9 +8500,29 @@ def build_compare_html(
       font-weight: 700;
       color: #263241;
     }
+    .layer-row.unavailable .layer-name,
+    .layer-row.unavailable .layer-detail {
+      color: #9aa6b5;
+    }
     .layer-detail {
       font-size: 11px;
       color: #657487;
+    }
+    .layer-loading {
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #cbd5e1;
+      border-top-color: #24476f;
+      border-radius: 999px;
+      animation: compare-layer-spin 0.75s linear infinite;
+      flex: 0 0 auto;
+    }
+    .layer-row.loading .layer-loading {
+      display: inline-block;
+    }
+    @keyframes compare-layer-spin {
+      to { transform: rotate(360deg); }
     }
     .bottom-controller {
       position: absolute;
@@ -7465,9 +8538,51 @@ def build_compare_html(
       overflow: auto;
       padding: 10px 14px 12px;
     }
+    .bottom-controller-toggle {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      z-index: 1;
+      width: 34px;
+      height: 32px;
+      border: 0;
+      border-radius: 7px;
+      background: #eef3f8;
+      color: #263241;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+    .bottom-controller-toggle:hover,
+    .bottom-controller-toggle:focus-visible {
+      background: #e2eaf3;
+    }
+    .bottom-controller-body {
+      padding-right: 42px;
+    }
+    .bottom-controller.collapsed {
+      left: auto;
+      right: 12px;
+      bottom: 12px;
+      width: auto;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      padding: 6px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+    }
+    .bottom-controller.collapsed .bottom-controller-body {
+      display: none;
+    }
+    .bottom-controller.collapsed .bottom-controller-toggle {
+      position: static;
+      width: 38px;
+      height: 36px;
+    }
     .control-grid {
       display: grid;
-      grid-template-columns: 170px repeat(7, minmax(120px, 1fr));
+      grid-template-columns: 170px repeat(6, minmax(120px, 1fr));
       gap: 10px 12px;
       align-items: end;
     }
@@ -7483,6 +8598,33 @@ def build_compare_html(
     .control-value {
       color: #69798b;
       font-variant-numeric: tabular-nums;
+    }
+    .compare-variable-control {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+    }
+    .compare-variable-control input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .compare-variable-control label {
+      border: 1px solid #ccd6e2;
+      border-radius: 6px;
+      background: #fff;
+      color: #344559;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1;
+      padding: 7px 8px;
+      text-align: center;
+    }
+    .compare-variable-control input:checked + label {
+      background: #24476f;
+      border-color: #24476f;
+      color: #fff;
     }
     .nav-link {
       display: inline-flex;
@@ -7516,46 +8658,118 @@ def build_compare_html(
       font-weight: 650;
       line-height: 1.35;
       text-align: center;
-      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      pointer-events: auto;
+    }
+    .showcase-disclaimer-close {
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      color: #5a4a16;
+      background: rgba(90, 74, 22, 0.1);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      padding: 0;
+    }
+    .showcase-disclaimer-close:hover,
+    .showcase-disclaimer-close:focus {
+      background: rgba(90, 74, 22, 0.18);
     }
     .legend-pill {
       position: absolute;
       right: 12px;
-      bottom: 12px;
+      bottom: 44px;
       z-index: 20;
-      width: min(300px, calc(100% - 24px));
+      width: min(220px, calc(100% - 24px));
       background: rgba(255, 255, 255, 0.94);
       border: 1px solid var(--panel-border);
       border-radius: 8px;
-      padding: 8px 10px;
+      padding: 6px 8px;
       box-shadow: 0 4px 16px rgba(20, 32, 46, 0.14);
     }
     .legend-ramp {
-      height: 10px;
+      height: 8px;
       border-radius: 999px;
       border: 1px solid #c6ced9;
       background: linear-gradient(90deg, rgb(34,104,209), rgb(246,246,242), rgb(207,50,45));
+    }
+    .legend-ramp.uncertainty-ramp {
+      background: linear-gradient(90deg, rgb(255,247,188), rgb(254,196,79), rgb(217,95,14), rgb(127,0,0));
     }
     .legend-labels {
       display: flex;
       justify-content: space-between;
       color: #5d6d80;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 800;
-      margin-top: 4px;
+      margin-top: 3px;
+    }
+    .legend-scale-control {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid #e1e7ef;
+    }
+    .legend-scale-header {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 3px;
+    }
+    .legend-scale-toggle {
+      width: 28px;
+      height: 26px;
+      border: 0;
+      border-radius: 7px;
+      background: #eef3f8;
+      color: #263241;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+    .legend-scale-toggle:hover,
+    .legend-scale-toggle:focus-visible {
+      background: #e2eaf3;
+    }
+    .legend-scale-control.collapsed {
+      padding-top: 6px;
+    }
+    .legend-scale-control.collapsed .legend-scale-body {
+      display: none;
+    }
+    .legend-scale-control.collapsed .legend-scale-toggle {
+      width: 32px;
+      height: 30px;
+    }
+    .legend-scale-control .control-label {
+      margin-bottom: 3px;
+    }
+    .legend-scale-control .form-range {
+      margin: 0;
     }
     @media (max-width: 900px) {
       :root { --bottom-height: 174px; }
+      html { font-size: 13px; }
+      .brand-long { display: none; }
+      .brand-short { display: inline; }
+      .app-navbar { padding-left: 9px !important; padding-right: 9px !important; }
+      .nav-link { padding-left: 8px; padding-right: 8px; }
+      .nav-link span { display: none !important; }
       .compare-shell { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
       .control-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
       .layer-panel { width: min(245px, calc(100% - 24px)); }
+      .legend-pill { bottom: 44px; width: min(190px, calc(100% - 24px)); }
     }
   </style>
 </head>
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html">Global Vertical Land Motion</a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
       <a class="nav-link ms-3" href="index.html"><i class="bi bi-globe-americas"></i><span class="d-none d-sm-inline">Map</span></a>
       <a class="nav-link ms-3" href="catalogue.html"><i class="bi bi-table"></i><span class="d-none d-sm-inline">Catalogue</span></a>
       <a class="nav-link ms-3 active" href="compare.html"><i class="bi bi-columns-gap"></i><span class="d-none d-sm-inline">Compare</span></a>
@@ -7563,8 +8777,11 @@ def build_compare_html(
     </div>
   </nav>
 
-  <div class="showcase-disclaimer">
-    Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Please cite original data sources, DOIs, and associated papers when using any dataset.
+  <div class="showcase-disclaimer" id="compareShowcaseDisclaimer">
+    <span>Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Please cite original data sources, DOIs, and associated papers when using any dataset.</span>
+    <button class="showcase-disclaimer-close" type="button" id="compareShowcaseDisclaimerClose" aria-label="Dismiss preliminary showcase notice">
+      <i class="bi bi-x-lg"></i>
+    </button>
   </div>
 
   <main class="compare-shell">
@@ -7572,21 +8789,43 @@ def build_compare_html(
       <div class="compare-map" id="compare-map-left"></div>
       <div class="pane-title">Left globe</div>
       <div class="layer-panel" id="layer-panel-left"></div>
-      <div class="legend-pill"><div class="legend-ramp"></div><div class="legend-labels"><span id="legend-left-min">-8</span><span>0</span><span id="legend-left-max">8</span></div></div>
     </section>
     <section class="compare-pane" data-side="right">
       <div class="compare-map" id="compare-map-right"></div>
       <div class="pane-title">Right globe</div>
       <div class="layer-panel" id="layer-panel-right"></div>
-      <div class="legend-pill"><div class="legend-ramp"></div><div class="legend-labels"><span id="legend-right-min">-8</span><span>0</span><span id="legend-right-max">8</span></div></div>
+      <div class="legend-pill">
+        <div class="legend-ramp"></div>
+        <div class="legend-labels"><span id="legend-right-min">-5</span><span id="legend-right-mid">0</span><span id="legend-right-max">5</span></div>
+        <div class="legend-scale-control" id="compareScaleControl">
+          <div class="legend-scale-header">
+            <button class="legend-scale-toggle" type="button" id="compareScaleToggle" aria-label="Toggle compare color range" aria-expanded="true">
+              <i class="bi bi-chevron-down"></i>
+            </button>
+          </div>
+          <div class="legend-scale-body">
+            <label class="control-label" for="compare-color-limit"><span id="compare-range-label">Trend range</span><span class="control-value"><span id="compare-range-prefix">±</span><span id="compare-color-value">5</span></span></label>
+            <input type="range" class="form-range" min="1" max="100" step="0.5" value="5" id="compare-color-limit">
+          </div>
+        </div>
+      </div>
     </section>
   </main>
 
-  <aside class="bottom-controller" aria-label="Shared comparison controls">
-    <div class="control-grid">
+  <aside class="bottom-controller" id="compareBottomController" aria-label="Shared comparison controls">
+    <button class="bottom-controller-toggle" type="button" id="compareBottomToggle" aria-label="Toggle comparison controls" aria-expanded="true">
+      <i class="bi bi-chevron-down"></i>
+    </button>
+    <div class="bottom-controller-body">
+      <div class="control-grid">
       <div>
-        <label class="control-label" for="compare-color-limit"><span>VLM range</span><span class="control-value">±<span id="compare-color-value">8</span></span></label>
-        <input type="range" class="form-range" min="1" max="100" step="1" value="8" id="compare-color-limit">
+        <div class="control-label"><span>Variable</span></div>
+        <div class="compare-variable-control" role="radiogroup" aria-label="Compare render variable">
+          <input type="radio" name="compare-render-variable" id="compare-variable-trend" value="trend" checked>
+          <label for="compare-variable-trend">Trend</label>
+          <input type="radio" name="compare-render-variable" id="compare-variable-uncertainty" value="uncertainty">
+          <label for="compare-variable-uncertainty">Uncertainty</label>
+        </div>
       </div>
       <div>
         <label class="control-label" for="compare-gia-opacity"><span>GIA opacity</span><span class="control-value"><span id="compare-gia-value">35</span>%</span></label>
@@ -7629,26 +8868,34 @@ def build_compare_html(
           </div>
         </div>
       </div>
+      </div>
     </div>
   </aside>
 
   <script>
     const {MapboxOverlay, BitmapLayer, ColumnLayer, PolygonLayer, ScatterplotLayer, COORDINATE_SYSTEM} = deck;
-    const POSITIVE_DATA = __POSITIVE_JSON__;
-    const NEGATIVE_DATA = __NEGATIVE_JSON__;
+    let POSITIVE_DATA = [];
+    let NEGATIVE_DATA = [];
+    let ALL_DATA = [];
     const METADATA = __METADATA_JSON__;
-    const GIA_GRID_VALUES = __GIA_VALUES_JSON__;
+    let NGL_IMAGED_GRID_VALUES = null;
+    const NGL_IMAGED_METADATA = __NGL_IMAGED_METADATA_JSON__;
+    let GIA_GRID_VALUES = null;
     const GIA_METADATA = __GIA_METADATA_JSON__;
-    const INSAR_GRIDS = __INSAR_GRIDS_JSON__;
-    const GNS_DATA = __GNS_RECORDS_JSON__;
-    const TIDE_GAUGE_DATA = __TIDE_GAUGE_RECORDS_JSON__;
-    const OELSMANN_HYBRID_DATA = __OELSMANN_HYBRID_RECORDS_JSON__;
+    let INSAR_GRIDS = [];
+    let GNS_DATA = [];
+    let TIDE_GAUGE_DATA = [];
+    let OELSMANN_HYBRID_DATA = [];
     const POPULATION_METADATA = __POPULATION_METADATA_JSON__;
     const POPULATION_DATA_URL = "__POPULATION_DATA_URL__";
+    const RENDER_PAYLOAD_URLS = __RENDER_URLS_JSON__;
+    const UNCERTAINTY_PAYLOAD_URLS = __UNCERTAINTY_URLS_JSON__;
 
     const shared = {
       renderMode: "points",
-      colorLimit: 8,
+      renderVariable: "trend",
+      colorLimit: 5,
+      uncertaintyLimit: 4,
       giaOpacity: 0.35,
       insarOpacity: 0.85,
       populationOpacity: 0.7,
@@ -7661,6 +8908,24 @@ def build_compare_html(
       tideGaugeScale: tideGaugeScaleForZoom(2.25),
       gpsAltitudeOffset: gpsAltitudeOffsetForZoom(2.25)
     };
+    const RENDER_DATASET_IDS = {
+      showGPS: "gnss_blewitt_2018",
+      showNglImaged: "gnss_imaged_hammond_2021",
+      showGIA: "gia_caron_2020",
+      showInSAR: "insar_ohenhen_2025",
+      showGNS: "insar_gnss_hamling_2022",
+      showOelsmannHybrid: "hybrid_oelsmann_2026",
+      showTideGauge: "tide_gauge_dangendorf_2026"
+    };
+    const UNCERTAINTY_DATASET_IDS = new Set(Object.keys(UNCERTAINTY_PAYLOAD_URLS));
+    const uncertaintyState = {
+      loaded: false,
+      loading: null,
+      payloads: {},
+      nglImagedValues: null,
+      giaValues: null,
+      max: 5
+    };
     const INITIAL_VIEW_STATE = {
       longitude: -101,
       latitude: 34,
@@ -7671,8 +8936,8 @@ def build_compare_html(
       pitch: 0
     };
     const sideState = {
-      left: {showGPS: true, showGIA: false, showInSAR: true, showGNS: true, showOelsmannHybrid: true, showTideGauge: true, showPopulation: false},
-      right: {showGPS: true, showGIA: false, showInSAR: true, showGNS: true, showOelsmannHybrid: true, showTideGauge: true, showPopulation: false}
+      left: {showGPS: true, showNglImaged: false, showGIA: false, showInSAR: true, showGNS: true, showOelsmannHybrid: true, showTideGauge: true, showPopulation: false},
+      right: {showGPS: true, showNglImaged: false, showGIA: false, showInSAR: true, showGNS: true, showOelsmannHybrid: true, showTideGauge: true, showPopulation: false}
     };
     const maps = {};
     const overlays = {};
@@ -7709,6 +8974,154 @@ def build_compare_html(
       const k = (t - 0.5) / 0.5;
       return [lerp(246, 207, k), lerp(246, 50, k), lerp(242, 45, k), alpha];
     }
+    function colorForUncertainty(value, alpha = 230) {
+      const safeMax = Math.max(0.5, Number(shared.uncertaintyLimit) || 4);
+      const t = Math.max(0, Math.min(1, Number(value) / safeMax));
+      const stops = [[255,247,188], [254,196,79], [217,95,14], [127,0,0]];
+      const scaled = t * (stops.length - 1);
+      const index = Math.min(Math.floor(scaled), stops.length - 2);
+      const k = scaled - index;
+      const a = stops[index];
+      const b = stops[index + 1];
+      return [lerp(a[0], b[0], k), lerp(a[1], b[1], k), lerp(a[2], b[2], k), alpha];
+    }
+    function renderValue(record) {
+      return shared.renderVariable === "uncertainty" ? Number(record.up_sigma_mm_yr) : Number(record.up_mm_yr);
+    }
+    function colorForRecord(record, alpha = 230) {
+      const value = renderValue(record);
+      if (!Number.isFinite(value)) return [180, 188, 198, Math.round(alpha * 0.45)];
+      return shared.renderVariable === "uncertainty" ? colorForUncertainty(value, alpha) : colorForValue(value, shared.colorLimit, alpha);
+    }
+    function datasetHasActiveVariable(datasetId) {
+      return shared.renderVariable !== "uncertainty" || UNCERTAINTY_DATASET_IDS.has(datasetId);
+    }
+    function loadJsonPayload(url) {
+      return fetch(url, {cache: "force-cache"}).then(response => {
+        if (!response.ok) throw new Error(`Could not load ${url}`);
+        return response.json();
+      });
+    }
+    function hydratePointUncertainty(records, idField, payload) {
+      if (!payload || !Array.isArray(payload.values)) return;
+      const lookup = new Map(payload.values.map(item => [String(item[0]), Number(item[1])]));
+      for (const record of records) {
+        const value = lookup.get(String(record[idField]));
+        if (Number.isFinite(value)) record.up_sigma_mm_yr = value;
+      }
+    }
+    const renderPayloadState = {
+      payloads: {},
+      loading: {},
+      errors: {}
+    };
+    function setCompareDatasetLoading(datasetId, loading) {
+      document.querySelectorAll(`.layer-row[data-dataset-id="${datasetId}"]`).forEach(row => {
+        row.classList.toggle("loading", loading);
+        row.setAttribute("aria-busy", loading ? "true" : "false");
+      });
+    }
+    function hydrateLoadedUncertaintyForDataset(datasetId) {
+      if (!uncertaintyState.loaded) return;
+      if (datasetId === RENDER_DATASET_IDS.showGPS) {
+        hydratePointUncertainty(ALL_DATA, "station", uncertaintyState.payloads.gnss_blewitt_2018);
+      } else if (datasetId === RENDER_DATASET_IDS.showGNS) {
+        hydratePointUncertainty(GNS_DATA, "id", uncertaintyState.payloads.insar_gnss_hamling_2022);
+      } else if (datasetId === RENDER_DATASET_IDS.showOelsmannHybrid) {
+        hydratePointUncertainty(OELSMANN_HYBRID_DATA, "id", uncertaintyState.payloads.hybrid_oelsmann_2026);
+      } else if (datasetId === RENDER_DATASET_IDS.showTideGauge) {
+        hydratePointUncertainty(TIDE_GAUGE_DATA, "id", uncertaintyState.payloads.tide_gauge_dangendorf_2026);
+      }
+    }
+    function assignRenderPayload(datasetId, payload) {
+      if (datasetId === RENDER_DATASET_IDS.showGPS) {
+        POSITIVE_DATA = Array.isArray(payload.positive) ? payload.positive : [];
+        NEGATIVE_DATA = Array.isArray(payload.negative) ? payload.negative : [];
+        ALL_DATA = POSITIVE_DATA.concat(NEGATIVE_DATA);
+      } else if (datasetId === RENDER_DATASET_IDS.showNglImaged) {
+        NGL_IMAGED_GRID_VALUES = Array.isArray(payload.values) ? payload.values : null;
+        nglImagedCellCache = null;
+        nglImagedCellCacheVariable = null;
+      } else if (datasetId === RENDER_DATASET_IDS.showGIA) {
+        GIA_GRID_VALUES = Array.isArray(payload.values) ? payload.values : null;
+        giaCellCache = null;
+        giaCellCacheVariable = null;
+      } else if (datasetId === RENDER_DATASET_IDS.showInSAR) {
+        INSAR_GRIDS = Array.isArray(payload.grids) ? payload.grids : [];
+      } else if (datasetId === RENDER_DATASET_IDS.showGNS) {
+        GNS_DATA = Array.isArray(payload.records) ? payload.records : [];
+      } else if (datasetId === RENDER_DATASET_IDS.showOelsmannHybrid) {
+        OELSMANN_HYBRID_DATA = Array.isArray(payload.records) ? payload.records : [];
+      } else if (datasetId === RENDER_DATASET_IDS.showTideGauge) {
+        TIDE_GAUGE_DATA = Array.isArray(payload.records) ? payload.records : [];
+      }
+      renderPayloadState.payloads[datasetId] = payload;
+      hydrateLoadedUncertaintyForDataset(datasetId);
+    }
+    function loadRenderPayload(datasetId) {
+      if (renderPayloadState.payloads[datasetId]) return Promise.resolve(renderPayloadState.payloads[datasetId]);
+      if (renderPayloadState.loading[datasetId]) return renderPayloadState.loading[datasetId];
+      const url = RENDER_PAYLOAD_URLS[datasetId];
+      if (!url) return Promise.resolve(null);
+      setCompareDatasetLoading(datasetId, true);
+      renderPayloadState.loading[datasetId] = loadJsonPayload(url).then(payload => {
+        assignRenderPayload(datasetId, payload || {});
+        delete renderPayloadState.errors[datasetId];
+        return payload;
+      }).catch(error => {
+        renderPayloadState.errors[datasetId] = error;
+        console.warn(error);
+        return null;
+      }).finally(() => {
+        delete renderPayloadState.loading[datasetId];
+        setCompareDatasetLoading(datasetId, false);
+        updateSideLayers("left");
+        updateSideLayers("right");
+      });
+      return renderPayloadState.loading[datasetId];
+    }
+    function loadActiveRenderPayloads(side = null) {
+      const sides = side ? [side] : ["left", "right"];
+      const activeDatasetIds = new Set();
+      for (const currentSide of sides) {
+        const s = sideState[currentSide];
+        Object.entries(RENDER_DATASET_IDS).forEach(([key, datasetId]) => {
+          if (s[key] && datasetHasActiveVariable(datasetId)) activeDatasetIds.add(datasetId);
+        });
+        if (s.showPopulation && !makePopulationPointData()) {
+          loadPopulationDataset().then(() => updateSideLayers(currentSide));
+        }
+      }
+      activeDatasetIds.forEach(datasetId => loadRenderPayload(datasetId));
+    }
+    function updateUncertaintyMax() {
+      const maxValues = Object.values(uncertaintyState.payloads).map(payload => Number(payload && payload.max)).filter(Number.isFinite);
+      uncertaintyState.max = maxValues.length ? Math.max(0.5, ...maxValues) : 5;
+    }
+    function loadUncertaintyPayloads() {
+      if (uncertaintyState.loaded) return Promise.resolve(uncertaintyState.payloads);
+      if (uncertaintyState.loading) return uncertaintyState.loading;
+      uncertaintyState.loading = Promise.all(Object.entries(UNCERTAINTY_PAYLOAD_URLS).map(([datasetId, url]) =>
+        loadJsonPayload(url).then(payload => [datasetId, payload])
+      )).then(entries => {
+        uncertaintyState.payloads = Object.fromEntries(entries);
+        hydratePointUncertainty(ALL_DATA, "station", uncertaintyState.payloads.gnss_blewitt_2018);
+        hydratePointUncertainty(GNS_DATA, "id", uncertaintyState.payloads.insar_gnss_hamling_2022);
+        hydratePointUncertainty(OELSMANN_HYBRID_DATA, "id", uncertaintyState.payloads.hybrid_oelsmann_2026);
+        hydratePointUncertainty(TIDE_GAUGE_DATA, "id", uncertaintyState.payloads.tide_gauge_dangendorf_2026);
+        uncertaintyState.nglImagedValues = uncertaintyState.payloads.gnss_imaged_hammond_2021?.values || null;
+        uncertaintyState.giaValues = uncertaintyState.payloads.gia_caron_2020?.values || null;
+        updateUncertaintyMax();
+        uncertaintyState.loaded = true;
+        uncertaintyState.loading = null;
+        return uncertaintyState.payloads;
+      }).catch(error => {
+        uncertaintyState.loading = null;
+        console.warn(error);
+        return uncertaintyState.payloads;
+      });
+      return uncertaintyState.loading;
+    }
     function colorForUp(value) {
       return colorForValue(value, shared.colorLimit, 230);
     }
@@ -7716,25 +9129,67 @@ def build_compare_html(
       if (value === null || value === undefined || Number.isNaN(Number(value))) return "N/A";
       return Number(value).toFixed(digits);
     }
-    function makeGiaCanvas(alpha) {
-      const xCount = GIA_METADATA.x_count;
-      const yCount = GIA_METADATA.y_count;
-      const canvas = document.createElement("canvas");
-      canvas.width = xCount;
-      canvas.height = yCount;
-      const context = canvas.getContext("2d");
-      const image = context.createImageData(canvas.width, canvas.height);
-      for (let i = 0; i < GIA_GRID_VALUES.length; i += 1) {
-        const value = GIA_GRID_VALUES[i][2];
-        const color = colorForValue(value, shared.colorLimit, alpha);
-        const offset = i * 4;
-        image.data[offset] = color[0];
-        image.data[offset + 1] = color[1];
-        image.data[offset + 2] = color[2];
-        image.data[offset + 3] = color[3];
+    let giaCellCache = null;
+    let giaCellCacheVariable = null;
+    let nglImagedCellCache = null;
+    let nglImagedCellCacheVariable = null;
+    function makeGridCellData(metadata, values, variable) {
+      const cells = [];
+      if (!values) return cells;
+      const width = metadata.width;
+      const height = metadata.height;
+      const bounds = metadata.bounds;
+      const lonStep = (bounds[2] - bounds[0]) / width;
+      const latStep = (bounds[3] - bounds[1]) / height;
+      for (let y = 0; y < height; y += 1) {
+        const south = Math.max(-89.999, bounds[1] + y * latStep);
+        const north = Math.min(89.999, south + latStep);
+        for (let x = 0; x < width; x += 1) {
+          const value = values[y * width + x];
+          if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
+          const west = bounds[0] + x * lonStep;
+          const east = west + lonStep;
+          cells.push({
+            up_mm_yr: variable === "uncertainty" ? null : value,
+            up_sigma_mm_yr: variable === "uncertainty" ? value : null,
+            polygon: [[west, south], [east, south], [east, north], [west, north]]
+          });
+        }
       }
-      context.putImageData(image, 0, 0);
-      return canvas;
+      return cells;
+    }
+    function makeGIACellData() {
+      if (giaCellCache && giaCellCacheVariable === shared.renderVariable) return giaCellCache;
+      const cells = [];
+      const width = GIA_METADATA.width;
+      const height = GIA_METADATA.height;
+      const values = shared.renderVariable === "uncertainty" ? uncertaintyState.giaValues : GIA_GRID_VALUES;
+      if (!values) return cells;
+      for (let y = 0; y < height; y += 1) {
+        const north = Math.min(89.999, 90 - y);
+        const south = Math.max(-89.999, 90 - y - 1);
+        for (let x = 0; x < width; x += 1) {
+          const value = values[y * width + x];
+          if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
+          const west = -180 + x;
+          const east = west + 1;
+          cells.push({
+            up_mm_yr: shared.renderVariable === "uncertainty" ? null : value,
+            up_sigma_mm_yr: shared.renderVariable === "uncertainty" ? value : null,
+            polygon: [[west, south], [east, south], [east, north], [west, north]]
+          });
+        }
+      }
+      giaCellCache = cells;
+      giaCellCacheVariable = shared.renderVariable;
+      return giaCellCache;
+    }
+    function makeNglImagedCellData() {
+      if (nglImagedCellCache && nglImagedCellCacheVariable === shared.renderVariable) return nglImagedCellCache;
+      const values = shared.renderVariable === "uncertainty" ? uncertaintyState.nglImagedValues : NGL_IMAGED_GRID_VALUES;
+      nglImagedCellCache = makeGridCellData(NGL_IMAGED_METADATA, values, shared.renderVariable);
+      nglImagedCellCacheVariable = shared.renderVariable;
+      return nglImagedCellCache;
     }
     function makeGridCanvas(grid, opacity) {
       const canvas = document.createElement("canvas");
@@ -7774,6 +9229,7 @@ def build_compare_html(
     function loadPopulationDataset() {
       if (window.GHSL_POPULATION_PAYLOAD) return Promise.resolve(window.GHSL_POPULATION_PAYLOAD);
       if (populationLoadPromise) return populationLoadPromise;
+      setCompareDatasetLoading("ghsl_schiavina_2025", true);
       populationLoadPromise = new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = POPULATION_DATA_URL;
@@ -7781,6 +9237,12 @@ def build_compare_html(
         script.onload = () => resolve(window.GHSL_POPULATION_PAYLOAD);
         script.onerror = reject;
         document.head.appendChild(script);
+      }).catch(error => {
+        populationLoadPromise = null;
+        console.warn(error);
+        return null;
+      }).finally(() => {
+        setCompareDatasetLoading("ghsl_schiavina_2025", false);
       });
       return populationLoadPromise;
     }
@@ -7805,20 +9267,40 @@ def build_compare_html(
     }
     function makeLayers(side) {
       const s = sideState[side];
-      const positive = s.showGPS ? POSITIVE_DATA.filter(stationMatches) : [];
-      const negative = s.showGPS ? NEGATIVE_DATA.filter(stationMatches) : [];
+      const positive = s.showGPS && datasetHasActiveVariable(RENDER_DATASET_IDS.showGPS) ? POSITIVE_DATA.filter(stationMatches) : [];
+      const negative = s.showGPS && datasetHasActiveVariable(RENDER_DATASET_IDS.showGPS) ? NEGATIVE_DATA.filter(stationMatches) : [];
       const layers = [];
-      if (s.showGIA) {
-        layers.push(new BitmapLayer({
+      if (s.showGIA && datasetHasActiveVariable(RENDER_DATASET_IDS.showGIA)) {
+        layers.push(new PolygonLayer({
           id: `${side}-gia`,
-          image: makeGiaCanvas(Math.round(255 * shared.giaOpacity)),
-          bounds: [-180, -90, 180, 90],
-          _imageCoordinateSystem: COORDINATE_SYSTEM.CARTESIAN,
+          data: makeGIACellData(),
+          getPolygon: d => d.polygon,
+          getFillColor: d => colorForRecord(d, Math.round(255 * shared.giaOpacity)),
+          stroked: false,
+          filled: true,
           pickable: false,
-          parameters: {depthTest: false, depthMask: false}
+          parameters: {depthTest: false, depthMask: false},
+          updateTriggers: {
+            getFillColor: [shared.colorLimit, shared.uncertaintyLimit, shared.giaOpacity, shared.renderVariable]
+          }
         }));
       }
-      if (s.showInSAR) {
+      if (s.showNglImaged && datasetHasActiveVariable(RENDER_DATASET_IDS.showNglImaged)) {
+        layers.push(new PolygonLayer({
+          id: `${side}-ngl-gps-imaging`,
+          data: makeNglImagedCellData(),
+          getPolygon: d => d.polygon,
+          getFillColor: d => colorForRecord(d, 215),
+          stroked: false,
+          filled: true,
+          pickable: false,
+          parameters: {depthTest: false, depthMask: false},
+          updateTriggers: {
+            getFillColor: [shared.colorLimit, shared.uncertaintyLimit, shared.renderVariable]
+          }
+        }));
+      }
+      if (s.showInSAR && datasetHasActiveVariable(RENDER_DATASET_IDS.showInSAR)) {
         for (const grid of INSAR_GRIDS) {
           layers.push(new BitmapLayer({
             id: `${side}-insar-${grid.id}`,
@@ -7862,7 +9344,7 @@ def build_compare_html(
           }));
         }
       }
-      if (s.showGNS) {
+      if (s.showGNS && datasetHasActiveVariable(RENDER_DATASET_IDS.showGNS)) {
         layers.push(new ScatterplotLayer({
           id: `${side}-gns`,
           data: GNS_DATA,
@@ -7875,15 +9357,15 @@ def build_compare_html(
           filled: true,
           lineWidthMinPixels: 0.7,
           getLineColor: [255, 255, 255, 190],
-          getFillColor: d => colorForValue(d.up_mm_yr, shared.colorLimit, 255),
+          getFillColor: d => colorForRecord(d, 255),
           pickable: true,
           parameters: {depthTest: false, depthMask: false},
           updateTriggers: {
-            getFillColor: [shared.colorLimit]
+            getFillColor: [shared.colorLimit, shared.uncertaintyLimit, shared.renderVariable]
           }
         }));
       }
-      if (s.showOelsmannHybrid) {
+      if (s.showOelsmannHybrid && datasetHasActiveVariable(RENDER_DATASET_IDS.showOelsmannHybrid)) {
         layers.push(new ScatterplotLayer({
           id: `${side}-oelsmann-hybrid`,
           data: OELSMANN_HYBRID_DATA,
@@ -7896,15 +9378,15 @@ def build_compare_html(
           filled: true,
           lineWidthMinPixels: 0.8,
           getLineColor: [80, 80, 80, 210],
-          getFillColor: d => colorForValue(d.up_mm_yr, shared.colorLimit, 255),
+          getFillColor: d => colorForRecord(d, 255),
           pickable: true,
           parameters: {depthTest: false, depthMask: false},
           updateTriggers: {
-            getFillColor: [shared.colorLimit]
+            getFillColor: [shared.colorLimit, shared.uncertaintyLimit, shared.renderVariable]
           }
         }));
       }
-      if (s.showTideGauge) {
+      if (s.showTideGauge && datasetHasActiveVariable(RENDER_DATASET_IDS.showTideGauge)) {
         layers.push(new ColumnLayer({
           id: `${side}-tide-gauges`,
           data: TIDE_GAUGE_DATA,
@@ -7918,11 +9400,11 @@ def build_compare_html(
           filled: true,
           lineWidthMinPixels: 1,
           getLineColor: [28, 38, 52, 210],
-          getFillColor: d => colorForValue(d.up_mm_yr, shared.colorLimit, 255),
+          getFillColor: d => colorForRecord(d, 255),
           pickable: true,
           parameters: {depthTest: false, depthMask: false},
           updateTriggers: {
-            getFillColor: [shared.colorLimit]
+            getFillColor: [shared.colorLimit, shared.uncertaintyLimit, shared.renderVariable]
           }
         }));
       }
@@ -7940,11 +9422,11 @@ def build_compare_html(
             filled: true,
             lineWidthMinPixels: 1,
             getLineColor: [120, 130, 142, 220],
-            getFillColor: d => colorForUp(d.up_mm_yr),
+            getFillColor: d => colorForRecord(d, 230),
             pickable: true,
             parameters: {depthTest: true, depthMask: false},
             updateTriggers: {
-              getFillColor: [shared.colorLimit]
+              getFillColor: [shared.colorLimit, shared.uncertaintyLimit, shared.renderVariable]
             }
           }));
         }
@@ -7958,10 +9440,10 @@ def build_compare_html(
             radius: Math.round(18000 * shared.markerScale),
             elevationScale: 1,
             diskResolution: 8,
-            getFillColor: d => colorForUp(d.up_mm_yr),
+            getFillColor: d => colorForRecord(d, 230),
             pickable: true,
             updateTriggers: {
-              getFillColor: [shared.colorLimit]
+              getFillColor: [shared.colorLimit, shared.uncertaintyLimit, shared.renderVariable]
             }
           }));
         }
@@ -7997,23 +9479,54 @@ def build_compare_html(
       updateAllLayers();
     }
     function updateSideLayers(side) {
-      if (sideState[side].showPopulation && !makePopulationPointData()) {
-        loadPopulationDataset().then(() => updateSideLayers(side)).catch(() => {});
-      }
+      loadActiveRenderPayloads(side);
       if (overlays[side]) overlays[side].setProps({layers: makeLayers(side)});
     }
+    function syncCompareVariableControls() {
+      const uncertaintyMode = shared.renderVariable === "uncertainty";
+      const color = document.getElementById("compare-color-limit");
+      color.min = uncertaintyMode ? "0.5" : "1";
+      color.max = uncertaintyMode ? "20" : "100";
+      color.step = "0.5";
+      color.value = uncertaintyMode ? shared.uncertaintyLimit : shared.colorLimit;
+      document.getElementById("compare-range-label").textContent = uncertaintyMode ? "Uncertainty range" : "Trend range";
+      document.getElementById("compare-range-prefix").textContent = uncertaintyMode ? "0-" : "±";
+      document.getElementById("compare-color-value").textContent = uncertaintyMode
+        ? formatNumber(shared.uncertaintyLimit, 1)
+        : formatNumber(shared.colorLimit, 1);
+      document.querySelectorAll(".layer-row[data-layer-key]").forEach(row => {
+        const datasetId = RENDER_DATASET_IDS[row.getAttribute("data-layer-key")];
+        const available = datasetHasActiveVariable(datasetId);
+        row.classList.toggle("unavailable", !available);
+        const input = row.querySelector("input");
+        if (input) {
+          input.disabled = !available;
+          input.title = available ? "" : "No uncertainty payload available";
+        }
+      });
+      document.querySelectorAll(".legend-ramp").forEach(ramp => {
+        ramp.classList.toggle("uncertainty-ramp", shared.renderVariable === "uncertainty");
+      });
+    }
     function updateAllLayers() {
+      syncCompareVariableControls();
       updateSideLayers("left");
       updateSideLayers("right");
-      document.getElementById("legend-left-min").textContent = `-${shared.colorLimit}`;
-      document.getElementById("legend-left-max").textContent = `${shared.colorLimit}`;
-      document.getElementById("legend-right-min").textContent = `-${shared.colorLimit}`;
-      document.getElementById("legend-right-max").textContent = `${shared.colorLimit}`;
+      if (shared.renderVariable === "uncertainty") {
+        document.getElementById("legend-right-min").textContent = "0";
+        document.getElementById("legend-right-mid").textContent = "";
+        document.getElementById("legend-right-max").textContent = formatNumber(shared.uncertaintyLimit, 1);
+      } else {
+        document.getElementById("legend-right-min").textContent = `-${shared.colorLimit}`;
+        document.getElementById("legend-right-mid").textContent = "0";
+        document.getElementById("legend-right-max").textContent = `${shared.colorLimit}`;
+      }
     }
     function createPanel(side) {
       const panel = document.getElementById(`layer-panel-${side}`);
       const rows = [
         ["showGPS", "GNSS", "NGL MIDAS station velocities"],
+        ["showNglImaged", "NGL GPS Imaging", "Hammond interpolated GNSS grid"],
         ["showGIA", "GIA", "Caron and Ivins model"],
         ["showInSAR", "InSAR", "Ohenhen delta grids"],
         ["showGNS", "InSAR + GNSS", "New Zealand coastal VLM"],
@@ -8029,13 +9542,18 @@ def build_compare_html(
         </div>
         <div class="layer-panel-body">
           ${rows.map(([key, name, detail]) => `
-        <label class="layer-row" for="${side}-${key}">
+        <label class="layer-row" data-layer-key="${key}" data-dataset-id="${RENDER_DATASET_IDS[key]}" for="${side}-${key}">
           <span><span class="layer-name">${name}</span><br><span class="layer-detail">${detail}</span></span>
-          <span class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" role="switch" id="${side}-${key}" ${sideState[side][key] ? "checked" : ""}></span>
+          <span class="d-inline-flex align-items-center gap-2"><span class="layer-loading" aria-hidden="true"></span><span class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" role="switch" id="${side}-${key}" ${sideState[side][key] ? "checked" : ""}></span></span>
         </label>
           `).join("")}
         </div>
       `;
+      if (window.matchMedia("(max-width: 900px)").matches) {
+        panel.classList.add("collapsed");
+        const icon = panel.querySelector(`#${side}-panel-toggle i`);
+        if (icon) icon.className = "bi bi-chevron-down";
+      }
       document.getElementById(`${side}-panel-toggle`).addEventListener("click", () => {
         panel.classList.toggle("collapsed");
         const icon = document.querySelector(`#${side}-panel-toggle i`);
@@ -8103,10 +9621,58 @@ def build_compare_html(
       maps[side] = map;
     }
     function wireBottomControls() {
+      const compactView = window.matchMedia("(max-width: 900px)").matches;
+      const bottomController = document.getElementById("compareBottomController");
+      const bottomToggle = document.getElementById("compareBottomToggle");
+      function setCompareBottomCollapsed(collapsed) {
+        bottomController.classList.toggle("collapsed", collapsed);
+        document.body.classList.toggle("compare-bottom-collapsed", collapsed);
+        bottomToggle.setAttribute("aria-expanded", String(!collapsed));
+        const icon = bottomToggle.querySelector("i");
+        icon.className = collapsed ? "bi bi-sliders2" : "bi bi-chevron-down";
+      }
+      if (bottomController && bottomToggle) {
+        setCompareBottomCollapsed(compactView);
+        bottomToggle.addEventListener("click", () => {
+          setCompareBottomCollapsed(!bottomController.classList.contains("collapsed"));
+        });
+      }
+
+      const scaleControl = document.getElementById("compareScaleControl");
+      const scaleToggle = document.getElementById("compareScaleToggle");
+      function setCompareScaleCollapsed(collapsed) {
+        scaleControl.classList.toggle("collapsed", collapsed);
+        scaleToggle.setAttribute("aria-expanded", String(!collapsed));
+        const icon = scaleToggle.querySelector("i");
+        icon.className = collapsed ? "bi bi-palette2" : "bi bi-chevron-down";
+      }
+      if (scaleControl && scaleToggle) {
+        setCompareScaleCollapsed(compactView);
+        scaleToggle.addEventListener("click", () => {
+          setCompareScaleCollapsed(!scaleControl.classList.contains("collapsed"));
+        });
+      }
+
+      function setCompareVariable(variable) {
+        shared.renderVariable = variable;
+        if (variable === "uncertainty") {
+          loadUncertaintyPayloads().then(updateAllLayers);
+        } else {
+          updateAllLayers();
+        }
+      }
+      document.querySelectorAll("input[name='compare-render-variable']").forEach(input => {
+        input.addEventListener("change", event => {
+          if (event.target.checked) setCompareVariable(event.target.value);
+        });
+      });
       const color = document.getElementById("compare-color-limit");
       color.addEventListener("input", event => {
-        shared.colorLimit = Number(event.target.value);
-        document.getElementById("compare-color-value").textContent = shared.colorLimit;
+        if (shared.renderVariable === "uncertainty") {
+          shared.uncertaintyLimit = Number(event.target.value);
+        } else {
+          shared.colorLimit = Number(event.target.value);
+        }
         updateAllLayers();
       });
       const gia = document.getElementById("compare-gia-opacity");
@@ -8164,6 +9730,9 @@ def build_compare_html(
       document.getElementById("compare-pop-right").addEventListener("change", event => {
         sideState.right.showPopulation = event.target.checked;
         updateSideLayers("right");
+      });
+      document.getElementById("compareShowcaseDisclaimerClose").addEventListener("click", () => {
+        document.getElementById("compareShowcaseDisclaimer").hidden = true;
       });
     }
     createPanel("left");
@@ -8223,6 +9792,11 @@ def main() -> None:
         help="Fetch the JPL VESL GIA grid even if a cache already exists.",
     )
     parser.add_argument(
+        "--refresh-ngl-imaged",
+        action="store_true",
+        help="Fetch the NGL GPS Imaging interpolated VLM text grid.",
+    )
+    parser.add_argument(
         "--refresh-insar",
         action="store_true",
         help="Fetch and extract the Zenodo InSAR VLM GeoTIFF archive.",
@@ -8250,6 +9824,9 @@ def main() -> None:
     args = parser.parse_args()
 
     raw_text, source = load_raw_midas(force_refresh=args.force_refresh)
+    raw_ngl_imaged_text, ngl_imaged_source = load_raw_ngl_imaged_vlm(
+        force_refresh=args.refresh_ngl_imaged
+    )
     raw_gia_text, gia_source = load_raw_gia(force_refresh=args.refresh_gia)
     insar_source = ensure_insar_dataset(force_refresh=args.refresh_insar)
     gns_source = ensure_gns_dataset(force_refresh=args.refresh_gns)
@@ -8257,7 +9834,10 @@ def main() -> None:
     oelsmann_hybrid_source = ensure_oelsmann_hybrid_dataset(force_refresh=args.refresh_hybrid)
     population_source = ensure_ghsl_population_dataset(force_refresh=args.refresh_external)
     records, metadata = parse_midas(raw_text)
-    gia_values, gia_metadata = parse_gia_grid(raw_gia_text)
+    ngl_imaged_values, ngl_imaged_uncertainties, ngl_imaged_metadata = parse_ngl_imaged_vlm_grid(
+        raw_ngl_imaged_text
+    )
+    gia_values, gia_uncertainties, gia_metadata = parse_gia_grid(raw_gia_text)
     insar_grids, insar_metadata = parse_insar_grids()
     gns_records, gns_metadata = parse_gns_coastal_vlm()
     tide_gauge_records, tide_gauge_metadata = parse_tide_gauge_vlm()
@@ -8267,6 +9847,7 @@ def main() -> None:
     population_metadata = build_ghsl_population_sidecar(force_refresh=args.refresh_external)
     dataset_attributes = build_dataset_attributes(
         records,
+        ngl_imaged_metadata,
         gia_metadata,
         insar_grids,
         gns_records,
@@ -8279,7 +9860,27 @@ def main() -> None:
     external_dataset_attributes = build_external_dataset_attributes(population_metadata)
     write_dataset_attribute_files(dataset_attributes)
     write_external_dataset_attribute_files(external_dataset_attributes)
+    uncertainty_urls = write_uncertainty_payloads(
+        records,
+        ngl_imaged_uncertainties,
+        ngl_imaged_metadata,
+        gia_uncertainties,
+        gia_metadata,
+        gns_records,
+        tide_gauge_records,
+        oelsmann_hybrid_records,
+    )
+    render_urls = write_render_payloads(
+        records,
+        ngl_imaged_values,
+        gia_values,
+        insar_grids,
+        gns_records,
+        tide_gauge_records,
+        oelsmann_hybrid_records,
+    )
     metadata["raw_data_source_used"] = source
+    ngl_imaged_metadata["raw_data_source_used"] = ngl_imaged_source
     gia_metadata["raw_data_source_used"] = gia_source
     insar_metadata["raw_data_source_used"] = insar_source
     gns_metadata["raw_data_source_used"] = gns_source
@@ -8289,6 +9890,8 @@ def main() -> None:
     html = build_html(
         records,
         metadata,
+        ngl_imaged_values,
+        ngl_imaged_metadata,
         gia_values,
         gia_metadata,
         insar_grids,
@@ -8302,6 +9905,8 @@ def main() -> None:
         dataset_attributes,
         population_metadata,
         external_dataset_attributes,
+        render_urls,
+        uncertainty_urls,
     )
     write_html(args.output, html)
     catalog_html = build_catalog_html(dataset_attributes)
@@ -8311,6 +9916,8 @@ def main() -> None:
     compare_html = build_compare_html(
         records,
         metadata,
+        ngl_imaged_values,
+        ngl_imaged_metadata,
         gia_values,
         gia_metadata,
         insar_grids,
@@ -8322,6 +9929,8 @@ def main() -> None:
         oelsmann_hybrid_records,
         oelsmann_hybrid_metadata,
         population_metadata,
+        render_urls,
+        uncertainty_urls,
     )
     write_html(args.compare_output, compare_html)
 
@@ -8329,19 +9938,21 @@ def main() -> None:
     print(f"Created: {args.catalog_output}")
     print(f"Created: {args.about_output}")
     print(f"Created: {args.compare_output}")
-    print(f"Stations embedded: {metadata['station_count']:,}")
+    print(f"Stations in render payload: {metadata['station_count']:,}")
     print(f"Skipped malformed rows: {metadata['malformed_rows_skipped']:,}")
     print(f"Raw data source used: {source}")
-    print(f"GIA grid cells embedded: {gia_metadata['value_count']:,}")
+    print(f"NGL GPS Imaging grid cells in render payload: {ngl_imaged_metadata['value_count']:,}")
+    print(f"NGL GPS Imaging raw data source used: {ngl_imaged_source}")
+    print(f"GIA grid cells in render payload: {gia_metadata['value_count']:,}")
     print(f"GIA raw data source used: {gia_source}")
-    print(f"InSAR grids embedded: {insar_metadata['grid_count']:,}")
-    print(f"InSAR valid pixels embedded: {insar_metadata['valid_pixel_count']:,}")
+    print(f"InSAR grids in render payload: {insar_metadata['grid_count']:,}")
+    print(f"InSAR valid pixels in render payload: {insar_metadata['valid_pixel_count']:,}")
     print(f"InSAR raw data source used: {insar_source}")
-    print(f"GNS coastal VLM points embedded: {gns_metadata['record_count']:,}")
+    print(f"GNS coastal VLM points in render payload: {gns_metadata['record_count']:,}")
     print(f"GNS raw data source used: {gns_source}")
-    print(f"CSL-TG tide gauges embedded: {tide_gauge_metadata['record_count']:,}")
+    print(f"CSL-TG tide gauges in render payload: {tide_gauge_metadata['record_count']:,}")
     print(f"CSL-TG raw data source used: {tide_gauge_source}")
-    print(f"Oelsmann hybrid coastal VLM points embedded: {oelsmann_hybrid_metadata['record_count']:,}")
+    print(f"Oelsmann hybrid coastal VLM points in render payload: {oelsmann_hybrid_metadata['record_count']:,}")
     print(f"Oelsmann hybrid raw data source used: {oelsmann_hybrid_source}")
     print(f"GHSL population pixels in sidecar: {population_metadata['valid_pixel_count']:,}")
     print(f"GHSL population raw data source used: {population_source}")

@@ -386,6 +386,12 @@
       .arrow-label { top: 10px; }
     }
     @media (max-width: 640px) {
+      html { font-size: 13px; }
+      .brand-long { display: none; }
+      .brand-short { display: inline; }
+      .app-navbar { padding-left: 9px !important; padding-right: 9px !important; }
+      .app-navbar .nav-link { padding-left: 8px; padding-right: 8px; }
+      .app-navbar .nav-link span { display: none !important; }
       .logo-chip { min-width: unset; width: 100%; }
     }
   </style>
@@ -393,7 +399,7 @@
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html">Global Vertical Land Motion</a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
       <a class="nav-link ms-3" href="index.html"><i class="bi bi-globe-americas"></i><span class="d-none d-sm-inline">Map</span></a>
       <a class="nav-link ms-3" href="catalogue.html"><i class="bi bi-table"></i><span class="d-none d-sm-inline">Catalogue</span></a>
       <a class="nav-link ms-3" href="compare.html"><i class="bi bi-columns-gap"></i><span class="d-none d-sm-inline">Compare</span></a>
