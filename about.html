@@ -387,8 +387,8 @@
     }
     @media (max-width: 640px) {
       html { font-size: 13px; }
-      .brand-long { display: none; }
-      .brand-short { display: inline; }
+      .brand-long { display: inline; }
+      .brand-short { display: none; }
       .app-navbar { padding-left: 9px !important; padding-right: 9px !important; }
       .app-navbar .nav-link { padding-left: 8px; padding-right: 8px; }
       .app-navbar .nav-link span { display: none !important; }
@@ -399,7 +399,7 @@
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span></a></div>
       <a class="nav-link ms-3" href="index.html"><i class="bi bi-globe-americas"></i><span class="d-none d-sm-inline">Map</span></a>
       <a class="nav-link ms-3" href="catalogue.html"><i class="bi bi-table"></i><span class="d-none d-sm-inline">Catalogue</span></a>
       <a class="nav-link ms-3" href="compare.html"><i class="bi bi-columns-gap"></i><span class="d-none d-sm-inline">Compare</span></a>
@@ -428,7 +428,8 @@
         </p>
 
         <div class="hero-actions">
-          <a class="pill-button primary" href="#how-it-works">Explore the platform concept</a>
+          <a class="pill-button primary" href="index.html">Open Global Map</a>
+          <a class="pill-button" href="#how-it-works">Explore the platform concept</a>
           <a class="pill-button" href="https://sites.google.com/view/iplsubsidence/home" target="_blank" rel="noopener">Visit IPLS</a>
           <a class="pill-button" href="https://forms.gle/" target="_blank" rel="noopener">Join the IPLS mailing list</a>
         </div>
@@ -574,6 +575,9 @@
           <p>
             The scientific context of this work is linked to the <strong>Marie Sklodowska-Curie Actions (MSCA)</strong>, part of Horizon Europe. The platform reflects that spirit by connecting research infrastructure, open data, transparent workflows, and international collaboration around sea-level change and coastal subsidence.
           </p>
+          <p>
+            This showcase was developed by Julius Oelsmann at the Technical University of Munich in the context of a Marie Sklodowska-Curie project. The views and prototype implementation are those of the author and do not necessarily represent an official TUM or European Commission product.
+          </p>
 
           <div class="logos">
             <a class="logo-chip" href="https://www.tum.de/en/" target="_blank" rel="noopener">
@@ -600,6 +604,34 @@
             </a>
           </div>
 
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="community-contact">
+      <div class="container-page grid-2">
+        <article class="card-panel panel">
+          <h3>Community co-development</h3>
+          <p>
+            This prototype is intended to evolve into a community effort where researchers and data providers from the VLM community are welcome to co-develop the code, metadata, and documentation through GitHub.
+          </p>
+          <p>
+            Authors and custodians of original datasets will be contacted and invited to contribute, correct metadata, improve provenance, and help shape the platform into a joint project.
+          </p>
+        </article>
+
+        <article class="card-panel panel">
+          <h3>Contact and reuse</h3>
+          <p>
+            Contact: <a href="mailto:julius.oelsmann@tum.de">julius.oelsmann@tum.de</a><br>
+            Julius Oelsmann, Technical University of Munich
+          </p>
+          <p>
+            Copyright (c) 2026 Julius Oelsmann. Code and website source are released under the MIT License. Third-party datasets remain governed by their original providers, licenses, DOIs, terms of use, and citation requirements.
+          </p>
+          <p>
+            This website uses GoatCounter for lightweight, aggregate website usage statistics. No advertising tracking is used.
+          </p>
         </article>
       </div>
     </section>
@@ -632,7 +664,7 @@
     <div class="container-page">
       <div class="card-panel panel">
         <p style="margin:0">
-          This About page is an initial, editable concept page for the Global VLM Data Platform. It can later be refined with final institutional language, official logo lockups, and direct links to live contribution workflows.
+          This About page is an initial, editable concept page for the Global VLM Data Platform. It can later be refined with final institutional language, official logo lockups, and direct links to live contribution workflows. Contact: <a href="mailto:julius.oelsmann@tum.de">julius.oelsmann@tum.de</a>.
         </p>
       </div>
     </div>
@@ -655,5 +687,7 @@
       });
     });
   </script>
+  <script data-goatcounter="https://global-vlm.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>

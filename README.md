@@ -1,6 +1,44 @@
 # Global Vertical Land Motion
 
+[![Open Map](https://img.shields.io/badge/Open-Global%20VLM%20Map-0f766e?style=for-the-badge&logo=githubpages)](https://oelsmann.github.io/vlm_viz/)
+[![Browse Catalogue](https://img.shields.io/badge/Browse-Dataset%20Catalogue-334155?style=for-the-badge)](https://oelsmann.github.io/vlm_viz/catalogue.html)
+
+![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-live-2ea44f?logo=github)
+![Static Site](https://img.shields.io/badge/site-static%20HTML%2FJS-blue)
+![Python](https://img.shields.io/badge/generator-Python-3776ab?logo=python&logoColor=white)
+![MapLibre](https://img.shields.io/badge/map-MapLibre-396cb2)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+This is a showcase website intended to motivate community efforts across the vertical land motion (VLM) community to make VLM data more accessible, transparent, interpretable, and applicable.
+
 Static deck.gl GlobeView visualization of GPS, GIA, InSAR, tide-gauge, hybrid InSAR/GNSS vertical land motion datasets, and optional external context layers.
+
+This prototype is intended to evolve into a community effort where researchers and data providers from the VLM community are welcome to co-develop the code, metadata, and documentation through GitHub. Authors and custodians of original datasets will be contacted and invited to contribute, correct metadata, improve provenance, and help shape the platform into a joint project.
+
+## Idea
+
+- The entire website can be transparently rebuilt from a single Python generator script, making the processing logic inspectable and easy to improve.
+- All displayed scientific layers are fetched or rebuilt from public source records, repositories, or archives with persistent links, DOIs, and citation targets where available.
+- The workflow is fully static and reproducible: preprocessing happens at build time, while the published website runs as plain HTML, JavaScript, CSS, and static data payloads.
+- Static hosting keeps the platform easy to mirror, archive, review, and deploy on GitHub Pages or similar services without a backend server.
+- Dataset metadata, provenance, source URLs, and classification notes are stored as structured files so they can be reviewed, corrected, and extended by the community.
+- Large raw datasets can stay outside Git history while compact render payloads and scripts preserve a reproducible path back to the original sources.
+
+## License
+
+Copyright (c) 2026 Julius Oelsmann.
+
+Code and website source are released under the MIT License. Included, generated, or linked datasets remain governed by their original providers, licenses, DOIs, and citation requirements; this repository does not relicense third-party data.
+
+The published website uses GoatCounter for lightweight, aggregate website usage statistics. No advertising tracking is used.
+
+## Contact and Project Context
+
+Julius Oelsmann  
+Technical University of Munich  
+Email: [julius.oelsmann@tum.de](mailto:julius.oelsmann@tum.de)
+
+This showcase was developed by Julius Oelsmann at the Technical University of Munich in the context of a Marie Sklodowska-Curie project. The views and prototype implementation are those of the author and do not necessarily represent an official TUM or European Commission product.
 
 ## Files
 

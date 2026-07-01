@@ -271,11 +271,11 @@
       }
 
       .brand-long {
-        display: none;
+        display: inline;
       }
 
       .brand-short {
-        display: inline;
+        display: none;
       }
 
       .app-navbar {
@@ -318,7 +318,7 @@
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span></a></div>
       <a class="nav-link ms-3" href="index.html">
         <i class="bi bi-globe-americas"></i>
         <span class="d-none d-sm-inline">Map</span>
@@ -341,7 +341,7 @@
   <main>
     <div class="catalog-shell">
       <div class="showcase-disclaimer">
-        Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Please cite original data sources, DOIs, and associated papers when using any dataset.
+        Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Catalogue metadata and classifications were assigned with AI support and have not been reviewed. Please cite original data sources, DOIs, and associated papers when using any dataset.
       </div>
 
       <section class="filter-panel mb-3">
@@ -787,5 +787,7 @@
     document.getElementById("reset-filters").addEventListener("click", resetFilters);
     renderTable();
   </script>
+  <script data-goatcounter="https://global-vlm.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>

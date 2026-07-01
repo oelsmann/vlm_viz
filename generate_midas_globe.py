@@ -3186,11 +3186,11 @@ def build_html(
       }}
 
       .brand-long {{
-        display: none;
+        display: inline;
       }}
 
       .brand-short {{
-        display: inline;
+        display: none;
       }}
 
       .app-navbar {{
@@ -3292,7 +3292,7 @@ def build_html(
         <i class="bi bi-layers"></i>
       </button>
       <div class="brand-stack me-auto">
-        <div class="brand-title"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
+        <div class="brand-title"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span></a></div>
       </div>
       <div class="navbar-stat align-items-center gap-2">
         <i class="bi bi-broadcast-pin"></i>
@@ -3760,6 +3760,10 @@ def build_html(
           </div>
         </div>
         <div class="modal-footer">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="selectionDownloadCsv" disabled>
+            <i class="bi bi-download"></i>
+            Download CSV
+          </button>
           <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
@@ -4332,7 +4336,71 @@ def build_html(
       return haversineKm(center.longitude, center.latitude, lon, lat) <= radiusKm;
     }}
 
+    function finiteOrBlank(value) {{
+      const number = Number(value);
+      return Number.isFinite(number) ? number : "";
+    }}
+
+    function selectionCsvFields(datasetId, datasetLabel, source, name) {{
+      const fields = {{
+        yearFrom: "",
+        yearTo: "",
+        info1: name || source.name || source.station || source.id || "",
+        info2: ""
+      }};
+
+      if (datasetId === "gnss") {{
+        fields.yearFrom = finiteOrBlank(source.first_epoch_year);
+        fields.yearTo = finiteOrBlank(source.last_epoch_year);
+        fields.info1 = source.station || fields.info1;
+        fields.info2 = [
+          source.version ? `version=${{source.version}}` : "",
+          Number.isFinite(Number(source.duration)) ? `duration_years=${{source.duration}}` : "",
+          Number.isFinite(Number(source.steps)) ? `steps=${{source.steps}}` : ""
+        ].filter(Boolean).join("; ");
+      }} else if (datasetId === "gns") {{
+        fields.yearFrom = 2003;
+        fields.yearTo = 2011;
+        fields.info1 = source.id || "GNS coastal point";
+        fields.info2 = [
+          Number.isFinite(Number(source.up_sigma_mm_yr)) ? `uncertainty_mm_yr=${{source.up_sigma_mm_yr}}` : "",
+          Number.isFinite(Number(source.observations)) ? `observations=${{source.observations}}` : "",
+          Number.isFinite(Number(source.quality_factor)) ? `quality_factor=${{source.quality_factor}}` : "",
+          Number.isFinite(Number(source.average_radius_km)) ? `average_radius_km=${{source.average_radius_km}}` : ""
+        ].filter(Boolean).join("; ");
+      }} else if (datasetId === "tideGauge") {{
+        fields.yearFrom = finiteOrBlank(source.first_year);
+        fields.yearTo = finiteOrBlank(source.last_year);
+        fields.info1 = source.name || fields.info1;
+        fields.info2 = [
+          source.psmsl_id ? `psmsl_id=${{source.psmsl_id}}` : "",
+          Number.isFinite(Number(source.up_sigma_mm_yr)) ? `uncertainty_mm_yr=${{source.up_sigma_mm_yr}}` : "",
+          Number.isFinite(Number(source.sample_count)) ? `samples=${{source.sample_count}}` : ""
+        ].filter(Boolean).join("; ");
+      }} else if (datasetId === "hybrid") {{
+        fields.yearFrom = 1995;
+        fields.yearTo = 2020;
+        fields.info1 = source.name || source.id || fields.info1;
+        fields.info2 = [
+          Number.isFinite(Number(source.up_sigma_mm_yr)) ? `uncertainty_mm_yr=${{source.up_sigma_mm_yr}}` : "",
+          Number.isFinite(Number(source.datatype)) ? `datatype=${{source.datatype}}` : ""
+        ].filter(Boolean).join("; ");
+      }} else if (datasetId === "insar") {{
+        fields.yearFrom = 2014;
+        fields.yearTo = 2023;
+        fields.info1 = source.deltaName || source.name || fields.info1;
+        fields.info2 = "Ohenhen et al. 2025";
+      }} else if (datasetId === "gia") {{
+        fields.info1 = "Tdur vertical land motion";
+        fields.info2 = "Caron and Ivins 2020 GIA model";
+      }}
+
+      return fields;
+    }}
+
     function selectionRecord(datasetId, datasetLabel, color, source, value, sigma, lon, lat, name) {{
+      source = source || {{}};
+      const csvFields = selectionCsvFields(datasetId, datasetLabel, source, name);
       return {{
         datasetId,
         datasetLabel,
@@ -4341,7 +4409,11 @@ def build_html(
         sigma: sigma === null || sigma === undefined || Number.isNaN(Number(sigma)) ? null : Number(sigma),
         longitude: Number(lon),
         latitude: Number(lat),
-        name: name || source.name || source.station || source.id || datasetLabel
+        name: name || source.name || source.station || source.id || datasetLabel,
+        yearFrom: csvFields.yearFrom,
+        yearTo: csvFields.yearTo,
+        info1: csvFields.info1,
+        info2: csvFields.info2
       }};
     }}
 
@@ -4398,7 +4470,7 @@ def build_html(
             if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
             const longitude = west + (col + 0.5) * lonStep;
             if (!pointWithinSelection(longitude, latitude)) continue;
-            output.push(selectionRecord(datasetId, datasetLabel, color, {{}}, value, null, longitude, latitude, grid.name));
+            output.push(selectionRecord(datasetId, datasetLabel, color, {{deltaName: grid.name}}, value, null, longitude, latitude, grid.name));
           }}
         }}
       }}
@@ -4471,6 +4543,54 @@ def build_html(
       }});
     }}
 
+    function activeSelectionRecords() {{
+      return selectionState.records.filter(record => selectionState.visibleDatasets[record.datasetId]);
+    }}
+
+    function csvCell(value) {{
+      if (value === null || value === undefined) return "";
+      const text = String(value);
+      return /[",\n\r]/.test(text) ? `"${{text.replace(/"/g, '""')}}"` : text;
+    }}
+
+    function downloadSelectionCsv() {{
+      const records = activeSelectionRecords();
+      if (!records.length) return;
+      const modeLabel = state.renderVariable === "uncertainty" ? "uncertainty" : "trend";
+      const rows = [[
+        "lon",
+        "lat",
+        "value_mm_year",
+        "type_or_reference",
+        "year_from",
+        "year_to",
+        "info_col_1",
+        "info_col_2"
+      ]];
+      records.forEach(record => {{
+        rows.push([
+          Number.isFinite(record.longitude) ? record.longitude.toFixed(6) : "",
+          Number.isFinite(record.latitude) ? record.latitude.toFixed(6) : "",
+          Number.isFinite(record.value) ? record.value.toFixed(4) : "",
+          `${{record.datasetLabel}} ${{modeLabel}}`,
+          record.yearFrom,
+          record.yearTo,
+          record.info1,
+          record.info2
+        ]);
+      }});
+      const csv = rows.map(row => row.map(csvCell).join(",")).join("\n") + "\n";
+      const blob = new Blob([csv], {{type: "text/csv;charset=utf-8"}});
+      const link = document.createElement("a");
+      const center = selectionState.center || {{longitude: 0, latitude: 0}};
+      link.href = URL.createObjectURL(blob);
+      link.download = `vlm_selection_${{formatNumber(center.longitude, 2)}}_${{formatNumber(center.latitude, 2)}}_${{selectionState.radiusKm}}km_${{modeLabel}}.csv`.replace(/[^a-zA-Z0-9_.-]+/g, "_");
+      document.body.appendChild(link);
+      link.click();
+      URL.revokeObjectURL(link.href);
+      link.remove();
+    }}
+
     function drawSelectionHistogram() {{
       const canvas = document.getElementById("selectionHistogramCanvas");
       if (!canvas) return;
@@ -4486,7 +4606,9 @@ def build_html(
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, width, height);
 
-      const activeRecords = selectionState.records.filter(record => selectionState.visibleDatasets[record.datasetId]);
+      const activeRecords = activeSelectionRecords();
+      const downloadButton = document.getElementById("selectionDownloadCsv");
+      if (downloadButton) downloadButton.disabled = activeRecords.length === 0;
       const variableLabel = state.renderVariable === "uncertainty" ? "uncertainties" : "trends";
       document.getElementById("selectionHistogramSubtitle").textContent = selectionState.center
         ? `${{activeRecords.length.toLocaleString()}} active of ${{selectionState.records.length.toLocaleString()}} selected ${{variableLabel}} | radius ${{selectionState.radiusKm}} km`
@@ -6623,6 +6745,7 @@ def build_html(
 
     document.getElementById("selection-open-histogram").addEventListener("click", openSelectionHistogram);
     document.getElementById("selectionHistogramModal").addEventListener("shown.bs.modal", drawSelectionHistogram);
+    document.getElementById("selectionDownloadCsv").addEventListener("click", downloadSelectionCsv);
     document.getElementById("selectionHistogramCanvas").addEventListener("mousemove", event => {{
       const tooltip = document.getElementById("selectionHistogramTooltip");
       const canvas = event.currentTarget;
@@ -6838,6 +6961,8 @@ def build_html(
     showStartupDisclaimerOnce();
     updateStats(filteredPositiveData(), filteredNegativeData());
   </script>
+  <script data-goatcounter="https://global-vlm.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
 """
@@ -7133,11 +7258,11 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
       }
 
       .brand-long {
-        display: none;
+        display: inline;
       }
 
       .brand-short {
-        display: inline;
+        display: none;
       }
 
       .app-navbar {
@@ -7180,7 +7305,7 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span></a></div>
       <a class="nav-link ms-3" href="index.html">
         <i class="bi bi-globe-americas"></i>
         <span class="d-none d-sm-inline">Map</span>
@@ -7203,7 +7328,7 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
   <main>
     <div class="catalog-shell">
       <div class="showcase-disclaimer">
-        Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Please cite original data sources, DOIs, and associated papers when using any dataset.
+        Preliminary showcase: this site is largely AI-generated and intended to motivate real community development, review, and shared stewardship of VLM data. Catalogue metadata and classifications were assigned with AI support and have not been reviewed. Please cite original data sources, DOIs, and associated papers when using any dataset.
       </div>
 
       <section class="filter-panel mb-3">
@@ -7649,6 +7774,8 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
     document.getElementById("reset-filters").addEventListener("click", resetFilters);
     renderTable();
   </script>
+  <script data-goatcounter="https://global-vlm.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
 """
@@ -8050,8 +8177,8 @@ def build_about_html() -> str:
     }
     @media (max-width: 640px) {
       html { font-size: 13px; }
-      .brand-long { display: none; }
-      .brand-short { display: inline; }
+      .brand-long { display: inline; }
+      .brand-short { display: none; }
       .app-navbar { padding-left: 9px !important; padding-right: 9px !important; }
       .app-navbar .nav-link { padding-left: 8px; padding-right: 8px; }
       .app-navbar .nav-link span { display: none !important; }
@@ -8062,7 +8189,7 @@ def build_about_html() -> str:
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span></a></div>
       <a class="nav-link ms-3" href="index.html"><i class="bi bi-globe-americas"></i><span class="d-none d-sm-inline">Map</span></a>
       <a class="nav-link ms-3" href="catalogue.html"><i class="bi bi-table"></i><span class="d-none d-sm-inline">Catalogue</span></a>
       <a class="nav-link ms-3" href="compare.html"><i class="bi bi-columns-gap"></i><span class="d-none d-sm-inline">Compare</span></a>
@@ -8091,7 +8218,8 @@ def build_about_html() -> str:
         </p>
 
         <div class="hero-actions">
-          <a class="pill-button primary" href="#how-it-works">Explore the platform concept</a>
+          <a class="pill-button primary" href="index.html">Open Global Map</a>
+          <a class="pill-button" href="#how-it-works">Explore the platform concept</a>
           <a class="pill-button" href="https://sites.google.com/view/iplsubsidence/home" target="_blank" rel="noopener">Visit IPLS</a>
           <a class="pill-button" href="https://forms.gle/" target="_blank" rel="noopener">Join the IPLS mailing list</a>
         </div>
@@ -8237,6 +8365,9 @@ def build_about_html() -> str:
           <p>
             The scientific context of this work is linked to the <strong>Marie Sklodowska-Curie Actions (MSCA)</strong>, part of Horizon Europe. The platform reflects that spirit by connecting research infrastructure, open data, transparent workflows, and international collaboration around sea-level change and coastal subsidence.
           </p>
+          <p>
+            This showcase was developed by Julius Oelsmann at the Technical University of Munich in the context of a Marie Sklodowska-Curie project. The views and prototype implementation are those of the author and do not necessarily represent an official TUM or European Commission product.
+          </p>
 
           <div class="logos">
             <a class="logo-chip" href="https://www.tum.de/en/" target="_blank" rel="noopener">
@@ -8263,6 +8394,34 @@ def build_about_html() -> str:
             </a>
           </div>
 
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="community-contact">
+      <div class="container-page grid-2">
+        <article class="card-panel panel">
+          <h3>Community co-development</h3>
+          <p>
+            This prototype is intended to evolve into a community effort where researchers and data providers from the VLM community are welcome to co-develop the code, metadata, and documentation through GitHub.
+          </p>
+          <p>
+            Authors and custodians of original datasets will be contacted and invited to contribute, correct metadata, improve provenance, and help shape the platform into a joint project.
+          </p>
+        </article>
+
+        <article class="card-panel panel">
+          <h3>Contact and reuse</h3>
+          <p>
+            Contact: <a href="mailto:julius.oelsmann@tum.de">julius.oelsmann@tum.de</a><br>
+            Julius Oelsmann, Technical University of Munich
+          </p>
+          <p>
+            Copyright (c) 2026 Julius Oelsmann. Code and website source are released under the MIT License. Third-party datasets remain governed by their original providers, licenses, DOIs, terms of use, and citation requirements.
+          </p>
+          <p>
+            This website uses GoatCounter for lightweight, aggregate website usage statistics. No advertising tracking is used.
+          </p>
         </article>
       </div>
     </section>
@@ -8295,7 +8454,7 @@ def build_about_html() -> str:
     <div class="container-page">
       <div class="card-panel panel">
         <p style="margin:0">
-          This About page is an initial, editable concept page for the Global VLM Data Platform. It can later be refined with final institutional language, official logo lockups, and direct links to live contribution workflows.
+          This About page is an initial, editable concept page for the Global VLM Data Platform. It can later be refined with final institutional language, official logo lockups, and direct links to live contribution workflows. Contact: <a href="mailto:julius.oelsmann@tum.de">julius.oelsmann@tum.de</a>.
         </p>
       </div>
     </div>
@@ -8318,6 +8477,8 @@ def build_about_html() -> str:
       });
     });
   </script>
+  <script data-goatcounter="https://global-vlm.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
 """
@@ -8754,8 +8915,8 @@ def build_compare_html(
     @media (max-width: 900px) {
       :root { --bottom-height: 174px; }
       html { font-size: 13px; }
-      .brand-long { display: none; }
-      .brand-short { display: inline; }
+      .brand-long { display: inline; }
+      .brand-short { display: none; }
       .app-navbar { padding-left: 9px !important; padding-right: 9px !important; }
       .nav-link { padding-left: 8px; padding-right: 8px; }
       .nav-link span { display: none !important; }
@@ -8769,7 +8930,7 @@ def build_compare_html(
 <body>
   <nav class="navbar app-navbar fixed-top px-3">
     <div class="container-fluid px-0">
-      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span><span class="brand-short">GVLM</span></a></div>
+      <div class="brand-title me-auto"><a href="index.html"><span class="brand-long">Global Vertical Land Motion</span></a></div>
       <a class="nav-link ms-3" href="index.html"><i class="bi bi-globe-americas"></i><span class="d-none d-sm-inline">Map</span></a>
       <a class="nav-link ms-3" href="catalogue.html"><i class="bi bi-table"></i><span class="d-none d-sm-inline">Catalogue</span></a>
       <a class="nav-link ms-3 active" href="compare.html"><i class="bi bi-columns-gap"></i><span class="d-none d-sm-inline">Compare</span></a>
@@ -9741,6 +9902,8 @@ def build_compare_html(
     createMap("left");
     createMap("right");
   </script>
+  <script data-goatcounter="https://global-vlm.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
 """
