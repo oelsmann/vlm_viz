@@ -9,6 +9,8 @@
 ![MapLibre](https://img.shields.io/badge/map-MapLibre-396cb2)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
+Visit the live site: <https://oelsmann.github.io/vlm_viz/>
+
 This is a showcase website intended to motivate community efforts across the vertical land motion (VLM) community to make VLM data more accessible, transparent, interpretable, and applicable.
 
 Static deck.gl GlobeView visualization of GPS, GIA, InSAR, tide-gauge, hybrid InSAR/GNSS vertical land motion datasets, and optional external context layers.
