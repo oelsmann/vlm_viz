@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://oelsmann.github.io/vlm_viz/sitemap.xml

@@ -2199,7 +2199,39 @@ def build_html(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Global Vertical Land Motion</title>
+  <meta name="description" content="Interactive global vertical land motion map showing GNSS, InSAR, tide-gauge, GIA model, and hybrid VLM datasets for sea-level and coastal subsidence research." />
+  <meta name="keywords" content="vertical land motion, VLM, GNSS, GPS, InSAR, tide gauge, GIA, sea-level rise, coastal subsidence, geodesy" />
+  <meta name="author" content="Julius Oelsmann" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <meta property="og:title" content="Global Vertical Land Motion" />
+  <meta property="og:description" content="A static, reproducible showcase website for discovering and comparing global vertical land motion datasets." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/" />
+  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Global Vertical Land Motion" />
+  <meta name="twitter:description" content="Explore GNSS, InSAR, tide-gauge, GIA, and hybrid vertical land motion datasets on an interactive global map." />
+  <script type="application/ld+json">
+  {{
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Global Vertical Land Motion",
+    "url": "https://oelsmann.github.io/vlm_viz/",
+    "description": "Interactive global vertical land motion map showing GNSS, InSAR, tide-gauge, GIA model, and hybrid VLM datasets for sea-level and coastal subsidence research.",
+    "creator": {{
+      "@type": "Person",
+      "name": "Julius Oelsmann",
+      "email": "julius.oelsmann@tum.de",
+      "affiliation": {{
+        "@type": "Organization",
+        "name": "Technical University of Munich"
+      }}
+    }},
+    "keywords": ["vertical land motion", "VLM", "GNSS", "InSAR", "tide gauges", "GIA", "sea-level rise", "coastal subsidence"]
+  }}
+  </script>
 
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
@@ -6991,7 +7023,18 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Global Vertical Land Motion Catalogue</title>
+  <meta name="description" content="Searchable catalogue of vertical land motion datasets, metadata, provenance, reference frames, observation sensitivity, process influence notes, and source links." />
+  <meta name="keywords" content="vertical land motion catalogue, VLM metadata, GNSS, InSAR, tide gauge, GIA, coastal subsidence, sea-level rise" />
+  <meta name="author" content="Julius Oelsmann" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/catalogue.html" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <meta property="og:title" content="Global Vertical Land Motion Catalogue" />
+  <meta property="og:description" content="Browse VLM dataset metadata, source records, DOIs, sensitivity classifications, and process influence notes." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/catalogue.html" />
+  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta name="twitter:card" content="summary" />
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
@@ -7794,7 +7837,18 @@ def build_about_html() -> str:
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>About | Global Vertical Land Motion</title>
+  <meta name="description" content="About the Global Vertical Land Motion platform concept: a static, reproducible, community-oriented website for VLM data discovery, transparency, and comparison." />
+  <meta name="keywords" content="Global Vertical Land Motion, VLM platform, community data platform, GNSS, InSAR, tide gauges, GIA, sea-level science, coastal subsidence" />
+  <meta name="author" content="Julius Oelsmann" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/about.html" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <meta property="og:title" content="About Global Vertical Land Motion" />
+  <meta property="og:description" content="Learn about the VLM platform concept, community co-development model, provenance goals, and project context." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/about.html" />
+  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta name="twitter:card" content="summary" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <style>
@@ -8524,7 +8578,18 @@ def build_compare_html(
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Compare | Global Vertical Land Motion</title>
+  <meta name="description" content="Side-by-side comparison view for global vertical land motion datasets with synchronized maps and independent layer controls." />
+  <meta name="keywords" content="vertical land motion comparison, VLM map comparison, GNSS, InSAR, GIA, tide gauge, coastal subsidence" />
+  <meta name="author" content="Julius Oelsmann" />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/compare.html" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <meta property="og:title" content="Compare Global Vertical Land Motion Datasets" />
+  <meta property="og:description" content="Compare VLM datasets side by side with synchronized globe views and separate layer controls." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/compare.html" />
+  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta name="twitter:card" content="summary" />
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
