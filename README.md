@@ -1,7 +1,7 @@
 # Global Vertical Land Motion
 
-[![Open Map](https://img.shields.io/badge/Open-Global%20VLM%20Map-0f766e?style=for-the-badge&logo=githubpages)](https://oelsmann.github.io/vlm_viz/)
-[![Browse Catalogue](https://img.shields.io/badge/Browse-Dataset%20Catalogue-334155?style=for-the-badge)](https://oelsmann.github.io/vlm_viz/catalogue.html)
+[![Open Map](https://img.shields.io/badge/Open-Global%20VLM%20Map-0f766e?style=for-the-badge&logo=githubpages)](https://verticallandmotion.com/)
+[![Browse Catalogue](https://img.shields.io/badge/Browse-Dataset%20Catalogue-334155?style=for-the-badge)](https://verticallandmotion.com/catalogue.html)
 
 ![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-live-2ea44f?logo=github)
 ![Static Site](https://img.shields.io/badge/site-static%20HTML%2FJS-blue)
@@ -9,7 +9,7 @@
 ![MapLibre](https://img.shields.io/badge/map-MapLibre-396cb2)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-Visit the live site: <https://oelsmann.github.io/vlm_viz/>
+Visit the live site: <https://verticallandmotion.com/>
 
 This is a showcase website intended to motivate community efforts across the vertical land motion (VLM) community to make VLM data more accessible, transparent, interpretable, and applicable.
 

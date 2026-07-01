@@ -2203,13 +2203,13 @@ def build_html(
   <meta name="keywords" content="vertical land motion, VLM, GNSS, GPS, InSAR, tide gauge, GIA, sea-level rise, coastal subsidence, geodesy" />
   <meta name="author" content="Julius Oelsmann" />
   <meta name="robots" content="index, follow" />
-  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/" />
+  <link rel="canonical" href="https://verticallandmotion.com/" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <meta property="og:title" content="Global Vertical Land Motion" />
   <meta property="og:description" content="A static, reproducible showcase website for discovering and comparing global vertical land motion datasets." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/" />
-  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta property="og:url" content="https://verticallandmotion.com/" />
+  <meta property="og:image" content="https://verticallandmotion.com/favicon.svg" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Global Vertical Land Motion" />
   <meta name="twitter:description" content="Explore GNSS, InSAR, tide-gauge, GIA, and hybrid vertical land motion datasets on an interactive global map." />
@@ -2218,7 +2218,7 @@ def build_html(
     "@context": "https://schema.org",
     "@type": "WebSite",
     "name": "Global Vertical Land Motion",
-    "url": "https://oelsmann.github.io/vlm_viz/",
+    "url": "https://verticallandmotion.com/",
     "description": "Interactive global vertical land motion map showing GNSS, InSAR, tide-gauge, GIA model, and hybrid VLM datasets for sea-level and coastal subsidence research.",
     "creator": {{
       "@type": "Person",
@@ -7027,13 +7027,13 @@ def build_catalog_html(dataset_attributes: dict[str, dict]) -> str:
   <meta name="keywords" content="vertical land motion catalogue, VLM metadata, GNSS, InSAR, tide gauge, GIA, coastal subsidence, sea-level rise" />
   <meta name="author" content="Julius Oelsmann" />
   <meta name="robots" content="index, follow" />
-  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/catalogue.html" />
+  <link rel="canonical" href="https://verticallandmotion.com/catalogue.html" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <meta property="og:title" content="Global Vertical Land Motion Catalogue" />
   <meta property="og:description" content="Browse VLM dataset metadata, source records, DOIs, sensitivity classifications, and process influence notes." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/catalogue.html" />
-  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta property="og:url" content="https://verticallandmotion.com/catalogue.html" />
+  <meta property="og:image" content="https://verticallandmotion.com/favicon.svg" />
   <meta name="twitter:card" content="summary" />
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -7841,13 +7841,13 @@ def build_about_html() -> str:
   <meta name="keywords" content="Global Vertical Land Motion, VLM platform, community data platform, GNSS, InSAR, tide gauges, GIA, sea-level science, coastal subsidence" />
   <meta name="author" content="Julius Oelsmann" />
   <meta name="robots" content="index, follow" />
-  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/about.html" />
+  <link rel="canonical" href="https://verticallandmotion.com/about.html" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <meta property="og:title" content="About Global Vertical Land Motion" />
   <meta property="og:description" content="Learn about the VLM platform concept, community co-development model, provenance goals, and project context." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/about.html" />
-  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta property="og:url" content="https://verticallandmotion.com/about.html" />
+  <meta property="og:image" content="https://verticallandmotion.com/favicon.svg" />
   <meta name="twitter:card" content="summary" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -8462,6 +8462,9 @@ def build_about_html() -> str:
           <p>
             Authors and custodians of original datasets will be contacted and invited to contribute, correct metadata, improve provenance, and help shape the platform into a joint project.
           </p>
+          <p>
+            Development happens openly in the GitHub repository <a href="https://github.com/oelsmann/vlm_viz" target="_blank" rel="noopener">oelsmann/vlm_viz</a>.
+          </p>
         </article>
 
         <article class="card-panel panel">
@@ -8582,13 +8585,13 @@ def build_compare_html(
   <meta name="keywords" content="vertical land motion comparison, VLM map comparison, GNSS, InSAR, GIA, tide gauge, coastal subsidence" />
   <meta name="author" content="Julius Oelsmann" />
   <meta name="robots" content="index, follow" />
-  <link rel="canonical" href="https://oelsmann.github.io/vlm_viz/compare.html" />
+  <link rel="canonical" href="https://verticallandmotion.com/compare.html" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <meta property="og:title" content="Compare Global Vertical Land Motion Datasets" />
   <meta property="og:description" content="Compare VLM datasets side by side with synchronized globe views and separate layer controls." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://oelsmann.github.io/vlm_viz/compare.html" />
-  <meta property="og:image" content="https://oelsmann.github.io/vlm_viz/favicon.svg" />
+  <meta property="og:url" content="https://verticallandmotion.com/compare.html" />
+  <meta property="og:image" content="https://verticallandmotion.com/favicon.svg" />
   <meta name="twitter:card" content="summary" />
   <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />

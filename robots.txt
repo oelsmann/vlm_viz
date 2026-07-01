@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://oelsmann.github.io/vlm_viz/sitemap.xml
+Sitemap: https://verticallandmotion.com/sitemap.xml
